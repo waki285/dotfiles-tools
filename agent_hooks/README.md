@@ -76,7 +76,7 @@ Pre-built binaries are available from GitHub Releases. The `run_after_20_agent-h
 ```bash
 # Download the binary for your platform
 curl -fsSL -o ~/.claude/hooks/agent_hooks_claude \
-  https://github.com/waki285/dotfiles/releases/download/agent_hooks-vX.Y.Z/agent_hooks_claude-<platform>
+  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_claude-<platform>
 
 chmod +x ~/.claude/hooks/agent_hooks_claude
 ```
@@ -86,7 +86,7 @@ chmod +x ~/.claude/hooks/agent_hooks_claude
 ```bash
 # Download the .node file for your platform
 curl -fsSL -o ~/.config/opencode/plugin/agent_hooks.node \
-  https://github.com/waki285/dotfiles/releases/download/agent_hooks-vX.Y.Z/agent_hooks_opencode-<platform>.node
+  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_opencode-<platform>.node
 ```
 
 ## Usage
