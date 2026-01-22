@@ -1,2 +1,5 @@
 # Build artifacts
 permissions-gen/permissions-gen
+
+# Rust
+agent_hooks/target/
