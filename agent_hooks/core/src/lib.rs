@@ -436,9 +436,11 @@ pub enum PackageManagerCheckResult {
 
 /// Regex patterns for detecting package manager commands.
 static PM_COMMAND_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    // Match npm/pnpm/yarn/bun followed by install/add/remove/ci/update/upgrade/uninstall/link/rebuild/dedupe
+    // Match npm/pnpm/yarn/bun followed by:
+    // - install/add/remove/ci/update/upgrade/uninstall/link/rebuild/dedupe (package management)
+    // - run/start/dev/build/test/exec (script execution)
     Regex::new(
-        r"(?:^|[;&|()]\s*)(?:sudo\s+)?(?:npx\s+)?(?P<pm>npm|pnpm|yarn|bun)\s+(?P<subcmd>install|add|remove|uninstall|ci|update|upgrade|link|rebuild|dedupe|i|rm|un|up)(?:\s|$)",
+        r"(?:^|[;&|()]\s*)(?:sudo\s+)?(?:npx\s+)?(?P<pm>npm|pnpm|yarn|bun)\s+(?P<subcmd>install|add|remove|uninstall|ci|update|upgrade|link|rebuild|dedupe|i|rm|un|up|run|start|dev|build|test|exec)(?:\s|$)",
     )
     .unwrap()
 });

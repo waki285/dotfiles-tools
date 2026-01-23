@@ -401,13 +401,48 @@ fn test_detect_pm_bun_install() {
 }
 
 #[test]
+fn test_detect_pm_run_commands() {
+    // run/start/dev/build/test/exec should also be detected
+    assert_eq!(
+        detect_package_manager_command("npm run build"),
+        Some(PackageManager::Npm)
+    );
+    assert_eq!(
+        detect_package_manager_command("npm start"),
+        Some(PackageManager::Npm)
+    );
+    assert_eq!(
+        detect_package_manager_command("pnpm run dev"),
+        Some(PackageManager::Pnpm)
+    );
+    assert_eq!(
+        detect_package_manager_command("yarn build"),
+        Some(PackageManager::Yarn)
+    );
+    assert_eq!(
+        detect_package_manager_command("bun run script.ts"),
+        Some(PackageManager::Bun)
+    );
+    assert_eq!(
+        detect_package_manager_command("npm test"),
+        Some(PackageManager::Npm)
+    );
+    assert_eq!(
+        detect_package_manager_command("pnpm exec jest"),
+        Some(PackageManager::Pnpm)
+    );
+    assert_eq!(
+        detect_package_manager_command("yarn dev"),
+        Some(PackageManager::Yarn)
+    );
+}
+
+#[test]
 fn test_detect_pm_no_match() {
-    assert_eq!(detect_package_manager_command("npm run build"), None);
-    assert_eq!(detect_package_manager_command("npm start"), None);
-    assert_eq!(detect_package_manager_command("pnpm run dev"), None);
-    assert_eq!(detect_package_manager_command("yarn build"), None);
-    assert_eq!(detect_package_manager_command("bun run script.ts"), None);
+    // Commands that should not match
     assert_eq!(detect_package_manager_command("ls -la"), None);
+    assert_eq!(detect_package_manager_command("npm --version"), None);
+    assert_eq!(detect_package_manager_command("npm help"), None);
 }
 
 #[test]
@@ -514,17 +549,23 @@ fn test_check_pm_ambiguous() {
 }
 
 #[test]
-fn test_check_pm_non_install_command() {
-    let temp_dir = std::env::temp_dir().join("agent_hooks_test_non_install");
+fn test_check_pm_run_command_mismatch() {
+    let temp_dir = std::env::temp_dir().join("agent_hooks_test_run_cmd");
     let _ = std::fs::create_dir_all(&temp_dir);
 
     cleanup_lock_files(&temp_dir);
 
     std::fs::write(temp_dir.join("pnpm-lock.yaml"), "").unwrap();
 
-    // npm run build should not trigger mismatch check
+    // npm run build should now trigger mismatch check
     let result = check_package_manager("npm run build", &temp_dir);
-    assert_eq!(result, PackageManagerCheckResult::Ok);
+    assert_eq!(
+        result,
+        PackageManagerCheckResult::Mismatch {
+            command_pm: PackageManager::Npm,
+            expected_pm: PackageManager::Pnpm,
+        }
+    );
 
     let _ = std::fs::remove_file(temp_dir.join("pnpm-lock.yaml"));
     let _ = std::fs::remove_dir(&temp_dir);
