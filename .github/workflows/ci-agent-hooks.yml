@@ -9,10 +9,16 @@ on:
       - main
     paths:
       - 'agent_hooks/**'
+      - 'claude_statusline/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/ci-agent-hooks.yml'
   pull_request:
     paths:
       - 'agent_hooks/**'
+      - 'claude_statusline/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/ci-agent-hooks.yml'
 
 env:
@@ -32,11 +38,10 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
 
       - name: Run cargo check
-        working-directory: agent_hooks
-        run: cargo check --all-targets
+        run: cargo check --workspace --all-targets
 
   fmt:
     name: Format
@@ -51,7 +56,6 @@ jobs:
           components: rustfmt
 
       - name: Run cargo fmt
-        working-directory: agent_hooks
         run: cargo fmt --all -- --check
 
   clippy:
@@ -69,11 +73,10 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
 
       - name: Run cargo clippy
-        working-directory: agent_hooks
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
     name: Test
@@ -91,12 +94,11 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
           key: ${{ matrix.os }}
 
       - name: Run cargo test
-        working-directory: agent_hooks
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
 
   build:
     name: Build
@@ -114,9 +116,8 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
           key: ${{ matrix.os }}
 
       - name: Run cargo build
-        working-directory: agent_hooks
-        run: cargo build --release
+        run: cargo build --workspace --release

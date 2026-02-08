@@ -53,7 +53,7 @@ jobs:
       - name: Cache Cargo registry and build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
           key: ${{ matrix.target }}-claude
 
       - name: Install musl tools (Linux x86_64)
@@ -68,17 +68,14 @@ jobs:
 
       - name: Build release binary (Unix)
         if: runner.os != 'Windows' && matrix.target != 'aarch64-unknown-linux-musl'
-        working-directory: agent_hooks
         run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_claude
 
       - name: Build release binary (Linux ARM64 musl with cross)
         if: matrix.target == 'aarch64-unknown-linux-musl'
-        working-directory: agent_hooks
         run: cross build --release --target ${{ matrix.target }} -p agent_hooks_claude
 
       - name: Build release binary (Windows)
         if: runner.os == 'Windows'
-        working-directory: agent_hooks
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_claude
@@ -87,14 +84,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp agent_hooks/target/${{ matrix.target }}/release/agent_hooks_claude dist/${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/agent_hooks_claude dist/${{ matrix.name }}
           chmod +x dist/${{ matrix.name }}
 
       - name: Prepare artifact (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "agent_hooks/target/${{ matrix.target }}/release/agent_hooks_claude.exe" "dist/${{ matrix.name }}"
+          Copy-Item "target/${{ matrix.target }}/release/agent_hooks_claude.exe" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -146,7 +143,7 @@ jobs:
       - name: Cache Cargo registry and build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: agent_hooks -> target
+          workspaces: . -> target
           key: ${{ matrix.target }}-opencode
 
       - name: Install cross (Linux ARM64)
@@ -155,30 +152,27 @@ jobs:
 
       - name: Build release binary (Unix)
         if: runner.os != 'Windows' && matrix.target != 'aarch64-unknown-linux-gnu'
-        working-directory: agent_hooks
         run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_opencode
 
       - name: Build release binary (Linux ARM64 with cross)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        working-directory: agent_hooks
         run: cross build --release --target ${{ matrix.target }} -p agent_hooks_opencode
 
       - name: Build release binary (Windows)
         if: runner.os == 'Windows'
-        working-directory: agent_hooks
         run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_opencode
 
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp agent_hooks/target/${{ matrix.target }}/release/${{ matrix.lib_name }} dist/${{ matrix.name }}
+          cp target/${{ matrix.target }}/release/${{ matrix.lib_name }} dist/${{ matrix.name }}
 
       - name: Prepare artifact (Windows)
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "agent_hooks/target/${{ matrix.target }}/release/${{ matrix.lib_name }}" "dist/${{ matrix.name }}"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.lib_name }}" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

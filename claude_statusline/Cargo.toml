@@ -1,0 +1,15 @@
+[package]
+name = "claude_statusline"
+version = "0.1.0"
+edition = "2024"
+description = "Powerline-style statusline renderer for Claude Status hook"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+terminal_size = "0.4"
+
+[lints]
+workspace = true

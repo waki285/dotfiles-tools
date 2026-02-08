@@ -2,4 +2,6 @@
 permissions-gen/permissions-gen
 
 # Rust
+target/
 agent_hooks/target/
+claude_statusline/target/

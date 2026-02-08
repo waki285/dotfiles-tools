@@ -7,7 +7,25 @@ Development tools for [waki285/dotfiles](https://github.com/waki285/dotfiles).
 | Directory | Description | Language |
 |-----------|-------------|----------|
 | [agent_hooks](agent_hooks/) | Hook system for AI coding agents (Claude Code, OpenCode) | Rust |
+| [claude_statusline](claude_statusline/) | Claude Status hook renderer with powerline-style ANSI output | Rust |
 | [permissions-gen](permissions-gen/) | Tool permission generator from centralized YAML | Go |
+
+## Rust workspace
+
+This repository is organized as a Cargo workspace rooted at `tools/Cargo.toml`.
+
+Workspace members:
+
+- `agent_hooks/core`
+- `agent_hooks/claude`
+- `agent_hooks/opencode`
+- `claude_statusline`
+
+Build all Rust members:
+
+```bash
+cargo build --workspace
+```
 
 ## agent_hooks
 
@@ -20,6 +38,18 @@ A Rust-based hook system providing safety checks for AI coding agents:
 - Detect package manager mismatches
 
 See [agent_hooks/README.md](agent_hooks/README.md) for details.
+
+## claude_statusline
+
+`claude_statusline` reads Claude Status hook JSON from `stdin` and prints a powerline-style status line.
+
+Displayed fields:
+
+- Model (`model.display_name` or `model.id`)
+- CWD (`workspace.current_dir` or `cwd`)
+- Project directory when different from CWD (`workspace.project_dir`)
+- Context usage percentage (`context_window.current_usage` / `context_window_size`)
+- Claude version (`version`) aligned to the right
 
 ## permissions-gen
 
