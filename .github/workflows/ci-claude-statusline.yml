@@ -37,6 +37,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo check
         run: cargo check --all-targets -p claude_statusline
@@ -72,6 +73,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo clippy
         run: cargo clippy --all-targets -p claude_statusline -- -D warnings
@@ -93,7 +95,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: ${{ matrix.os }}
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo test
         run: cargo test --all-targets -p claude_statusline
@@ -115,7 +117,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: ${{ matrix.os }}
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo build
         run: cargo build --release -p claude_statusline

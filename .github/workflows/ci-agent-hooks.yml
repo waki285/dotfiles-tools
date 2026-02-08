@@ -37,6 +37,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo check
         run: cargo check --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
@@ -72,6 +73,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo clippy
         run: cargo clippy --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode -- -D warnings
@@ -93,7 +95,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: ${{ matrix.os }}
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo test
         run: cargo test --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
@@ -115,7 +117,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: ${{ matrix.os }}
+          shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo build
         run: cargo build --release -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
