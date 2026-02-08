@@ -1,4 +1,4 @@
-name: CI agent_hooks
+name: CI claude_statusline
 
 permissions:
   contents: read
@@ -8,16 +8,16 @@ on:
     branches:
       - main
     paths:
-      - 'agent_hooks/**'
+      - 'claude_statusline/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - '.github/workflows/ci-agent-hooks.yml'
+      - '.github/workflows/ci-claude-statusline.yml'
   pull_request:
     paths:
-      - 'agent_hooks/**'
+      - 'claude_statusline/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - '.github/workflows/ci-agent-hooks.yml'
+      - '.github/workflows/ci-claude-statusline.yml'
 
 env:
   CARGO_TERM_COLOR: always
@@ -39,7 +39,7 @@ jobs:
           workspaces: . -> target
 
       - name: Run cargo check
-        run: cargo check --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo check --all-targets -p claude_statusline
 
   fmt:
     name: Format
@@ -54,7 +54,7 @@ jobs:
           components: rustfmt
 
       - name: Run cargo fmt
-        run: cargo fmt -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode -- --check
+        run: cargo fmt -p claude_statusline -- --check
 
   clippy:
     name: Clippy
@@ -74,7 +74,7 @@ jobs:
           workspaces: . -> target
 
       - name: Run cargo clippy
-        run: cargo clippy --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode -- -D warnings
+        run: cargo clippy --all-targets -p claude_statusline -- -D warnings
 
   test:
     name: Test
@@ -96,7 +96,7 @@ jobs:
           key: ${{ matrix.os }}
 
       - name: Run cargo test
-        run: cargo test --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo test --all-targets -p claude_statusline
 
   build:
     name: Build
@@ -118,4 +118,4 @@ jobs:
           key: ${{ matrix.os }}
 
       - name: Run cargo build
-        run: cargo build --release -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo build --release -p claude_statusline
