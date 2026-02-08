@@ -1,11 +1,17 @@
+use crossterm::{
+    cursor::{MoveLeft, MoveRight},
+    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
+    terminal,
+};
 use serde::Deserialize;
 use std::{
     env,
     fmt::Write as _,
     io::{self, Read},
+    process::Command,
     process::ExitCode,
 };
-use terminal_size::{Width, terminal_size};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Debug, Deserialize)]
 struct StatusInput {
@@ -51,9 +57,6 @@ struct CurrentUsage {
     cache_read_input: Option<u64>,
 }
 
-#[derive(Clone, Copy)]
-struct Color(u8, u8, u8);
-
 struct Segment {
     text: String,
     fg: Color,
@@ -61,8 +64,12 @@ struct Segment {
 }
 
 const POWERLINE_ARROW: char = '\u{e0b0}';
+const LEADING_COLORED_PADDING: &str = "  ";
+const RIGHT_EDGE_JUMP: u16 = 9999;
 
 fn main() -> ExitCode {
+    crossterm::style::force_color_output(true);
+
     let mut stdin = String::new();
     if let Err(err) = io::stdin().read_to_string(&mut stdin) {
         eprintln!("failed to read stdin: {err}");
@@ -89,7 +96,7 @@ fn build_statusline(input: &StatusInput) -> String {
     let model = input
         .model
         .as_ref()
-        .and_then(|model| model.display_name.as_deref().or(model.id.as_deref()))
+        .and_then(|value| value.display_name.as_deref().or(value.id.as_deref()))
         .filter(|value| !value.is_empty())
         .unwrap_or("unknown");
 
@@ -104,17 +111,18 @@ fn build_statusline(input: &StatusInput) -> String {
         .workspace
         .as_ref()
         .and_then(|workspace| workspace.project_dir.as_deref());
+    let git_lookup_dir = project_dir.unwrap_or(cwd);
 
     let mut left_segments = vec![
         Segment {
-            text: format!("model {model}"),
-            fg: Color(245, 240, 255),
-            bg: Color(146, 72, 177),
+            text: format!(" {model}"),
+            fg: rgb(245, 240, 255),
+            bg: rgb(146, 72, 177),
         },
         Segment {
-            text: format!("cwd {}", shorten_path(cwd, 3)),
-            fg: Color(255, 235, 244),
-            bg: Color(238, 96, 146),
+            text: format!(" {}", shorten_path(cwd, 3)),
+            fg: rgb(255, 235, 244),
+            bg: rgb(238, 96, 146),
         },
     ];
 
@@ -122,44 +130,141 @@ fn build_statusline(input: &StatusInput) -> String {
         && project_dir != cwd
     {
         left_segments.push(Segment {
-            text: format!("project {}", shorten_path(project_dir, 2)),
-            fg: Color(255, 243, 234),
-            bg: Color(242, 149, 108),
+            text: format!(" {}", shorten_path(project_dir, 2)),
+            fg: rgb(255, 243, 234),
+            bg: rgb(242, 149, 108),
+        });
+    }
+
+    if let Some(git_ref) = git_ref_for_dir(git_lookup_dir) {
+        left_segments.push(Segment {
+            text: format!(" {git_ref}"),
+            fg: rgb(232, 247, 239),
+            bg: rgb(72, 153, 120),
         });
     }
 
     if let Some(percent) = context_usage_percent(input) {
         left_segments.push(Segment {
-            text: format!("ctx {percent:.1}%"),
-            fg: Color(233, 247, 255),
-            bg: Color(67, 156, 205),
+            text: format!("󰆼 {percent:.1}%"),
+            fg: rgb(233, 247, 255),
+            bg: rgb(67, 156, 205),
         });
     }
 
     let (left_styled, left_width) = render_powerline(&left_segments);
+    let (left_prefix, left_prefix_width) = left_segments.first().map_or_else(
+        || (String::new(), 0),
+        |segment| {
+            (
+                format!(
+                    "{}{}",
+                    SetBackgroundColor(segment.bg),
+                    LEADING_COLORED_PADDING
+                ),
+                visible_width(LEADING_COLORED_PADDING),
+            )
+        },
+    );
 
     let version_text = input
         .version
         .as_deref()
-        .filter(|version| !version.is_empty())
+        .filter(|value| !value.is_empty())
         .map_or_else(|| "vunknown".to_string(), normalized_version);
 
-    let right_label = format!(" {version_text} ");
+    let right_label = format!(" 󰎙 {version_text} ");
     let right_width = visible_width(&right_label);
     let right_styled = format!(
-        "{}{}{}\x1b[0m",
-        bg(Color(48, 120, 168)),
-        fg(Color(233, 245, 255)),
-        right_label
+        "{}{}{}{}",
+        SetBackgroundColor(rgb(48, 120, 168)),
+        SetForegroundColor(rgb(233, 245, 255)),
+        right_label,
+        ResetColor
     );
 
-    let spacing = terminal_size()
-        .map(|(Width(width), _)| usize::from(width))
-        .and_then(|width| width.checked_sub(left_width + right_width))
-        .unwrap_or(1)
-        .max(1);
+    let required_width = left_prefix_width + left_width + right_width;
+    if let Some(terminal_width) = terminal_columns()
+        && terminal_width > required_width
+    {
+        let spacing = terminal_width - required_width;
+        return format!(
+            "{left_prefix}{left_styled}{}{right_styled}",
+            " ".repeat(spacing)
+        );
+    }
 
-    format!("{left_styled}{}{right_styled}", " ".repeat(spacing))
+    let move_left = u16::try_from(right_width).unwrap_or(u16::MAX);
+    format!(
+        "{left_prefix}{left_styled}{}{}{right_styled}",
+        MoveRight(RIGHT_EDGE_JUMP),
+        MoveLeft(move_left)
+    )
+}
+
+fn terminal_columns() -> Option<usize> {
+    if let Ok((columns, _)) = terminal::size() {
+        return Some(usize::from(columns));
+    }
+    env::var("COLUMNS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+}
+
+fn git_ref_for_dir(dir: &str) -> Option<String> {
+    git_command_output(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .or_else(|| git_command_output(dir, &["rev-parse", "--short", "HEAD"]))
+        .map(|value| truncate_to_width(&value, 28))
+}
+
+fn git_command_output(dir: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn truncate_to_width(value: &str, max_width: usize) -> String {
+    if visible_width(value) <= max_width {
+        return value.to_string();
+    }
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = "…";
+    let ellipsis_width = visible_width(ellipsis);
+    if max_width <= ellipsis_width {
+        return ellipsis.to_string();
+    }
+
+    let mut result = String::new();
+    let mut width = 0usize;
+    for ch in value.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width + ellipsis_width > max_width {
+            break;
+        }
+        result.push(ch);
+        width += ch_width;
+    }
+
+    result.push('…');
+    result
 }
 
 fn normalized_version(version: &str) -> String {
@@ -248,16 +353,18 @@ fn render_powerline(segments: &[Segment]) -> (String, usize) {
         return (String::new(), 0);
     }
 
+    let arrow_width = UnicodeWidthChar::width(POWERLINE_ARROW).unwrap_or(1);
     let mut rendered = String::new();
     let mut width = 0usize;
 
     for (idx, segment) in segments.iter().enumerate() {
         write!(
             rendered,
-            "{}{} {} \x1b[0m",
-            bg(segment.bg),
-            fg(segment.fg),
-            segment.text
+            "{}{} {} {}",
+            SetBackgroundColor(segment.bg),
+            SetForegroundColor(segment.fg),
+            segment.text,
+            ResetColor
         )
         .expect("writing into String must succeed");
         width += visible_width(&segment.text) + 2;
@@ -265,32 +372,36 @@ fn render_powerline(segments: &[Segment]) -> (String, usize) {
         if let Some(next) = segments.get(idx + 1) {
             write!(
                 rendered,
-                "{}{}{}\x1b[0m",
-                fg(segment.bg),
-                bg(next.bg),
-                POWERLINE_ARROW
+                "{}{}{}{}",
+                SetForegroundColor(segment.bg),
+                SetBackgroundColor(next.bg),
+                POWERLINE_ARROW,
+                ResetColor
             )
             .expect("writing into String must succeed");
         } else {
-            write!(rendered, "{}{}\x1b[0m", fg(segment.bg), POWERLINE_ARROW)
-                .expect("writing into String must succeed");
+            write!(
+                rendered,
+                "{}{}{}",
+                SetForegroundColor(segment.bg),
+                POWERLINE_ARROW,
+                ResetColor
+            )
+            .expect("writing into String must succeed");
         }
-        width += 1;
+
+        width += arrow_width;
     }
 
     (rendered, width)
 }
 
 fn visible_width(text: &str) -> usize {
-    text.chars().count()
+    UnicodeWidthStr::width(text)
 }
 
-fn fg(color: Color) -> String {
-    format!("\x1b[38;2;{};{};{}m", color.0, color.1, color.2)
-}
-
-fn bg(color: Color) -> String {
-    format!("\x1b[48;2;{};{};{}m", color.0, color.1, color.2)
+const fn rgb(r: u8, g: u8, b: u8) -> Color {
+    Color::Rgb { r, g, b }
 }
 
 #[cfg(test)]
@@ -334,5 +445,32 @@ mod tests {
             shorten_path("/Users/alice/work/project/src/bin", 2),
             "…/src/bin"
         );
+    }
+
+    #[test]
+    fn leading_padding_is_colored() {
+        let input = StatusInput {
+            _event_name: None,
+            cwd: None,
+            model: None,
+            workspace: None,
+            version: None,
+            context_window: None,
+        };
+        let line = build_statusline(&input);
+        let expected_prefix = format!(
+            "{}{}",
+            SetBackgroundColor(rgb(146, 72, 177)),
+            LEADING_COLORED_PADDING
+        );
+        assert!(line.starts_with(&expected_prefix));
+    }
+
+    #[test]
+    fn truncate_preserves_width_limit() {
+        let original = "feature/very-long-branch-name-for-statusline";
+        let truncated = truncate_to_width(original, 16);
+        assert!(visible_width(&truncated) <= 16);
+        assert!(truncated.ends_with('…'));
     }
 }
