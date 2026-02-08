@@ -63,6 +63,13 @@ struct Segment {
 }
 
 const POWERLINE_ARROW: char = '\u{e0b0}';
+const RIGHT_ALIGNMENT_GUARD_COLUMNS: usize = 1;
+const CLAUDE_RESERVED_RIGHT_COLUMNS: usize = 8;
+const CONTEXT_BAR_SLOTS: usize = 10;
+const CONTEXT_BAR_FILLED: char = '█';
+const CONTEXT_BAR_EMPTY: char = '░';
+const CONTEXT_BAR_THRESHOLDS: [f64; CONTEXT_BAR_SLOTS] =
+    [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0];
 
 fn main() -> ExitCode {
     crossterm::style::force_color_output(true);
@@ -144,7 +151,7 @@ fn build_statusline(input: &StatusInput) -> String {
     if let Some(percent) = context_usage_percent(input) {
         let (text_color, fill_color) = context_segment_colors(percent);
         left_segments.push(Segment {
-            text: format!("󰆼 {percent:.1}%"),
+            text: context_usage_label(percent),
             fg: text_color,
             bg: fill_color,
         });
@@ -158,7 +165,7 @@ fn build_statusline(input: &StatusInput) -> String {
         .filter(|value| !value.is_empty())
         .map_or_else(|| "vunknown".to_string(), normalized_version);
 
-    let right_label = format!("  {version_text} ");
+    let right_label = format!("  {version_text}");
     let right_width = visible_width(&right_label);
     let right_styled = format!(
         "{}{}{}{}",
@@ -168,15 +175,20 @@ fn build_statusline(input: &StatusInput) -> String {
         ResetColor
     );
 
-    let required_width = left_width + right_width;
-    if let Some(terminal_width) = terminal_columns()
-        && terminal_width > required_width
-    {
-        let spacing = terminal_width - required_width;
-        return format!("{left_styled}{}{right_styled}", " ".repeat(spacing));
+    let required_width = left_width + right_width + RIGHT_ALIGNMENT_GUARD_COLUMNS;
+    if let Some(terminal_width) = terminal_columns() {
+        let usable_width = usable_terminal_columns(terminal_width);
+        if usable_width > required_width {
+            let spacing = usable_width - required_width;
+            return format!("{left_styled}{}{right_styled}", " ".repeat(spacing));
+        }
     }
 
     format!("{left_styled} {right_styled}")
+}
+
+const fn usable_terminal_columns(terminal_width: usize) -> usize {
+    terminal_width.saturating_sub(CLAUDE_RESERVED_RIGHT_COLUMNS)
 }
 
 fn terminal_columns() -> Option<usize> {
@@ -290,6 +302,21 @@ fn context_segment_colors(percent: f64) -> (Color, Color) {
     } else {
         (rgb(233, 247, 255), rgb(67, 156, 205))
     }
+}
+
+fn context_usage_label(percent: f64) -> String {
+    let clamped_percent = percent.clamp(0.0, 100.0);
+    let filled_slots = CONTEXT_BAR_THRESHOLDS
+        .iter()
+        .filter(|&&threshold| clamped_percent >= threshold)
+        .count();
+    let empty_slots = CONTEXT_BAR_SLOTS.saturating_sub(filled_slots);
+    let bar = format!(
+        "{}{}",
+        CONTEXT_BAR_FILLED.to_string().repeat(filled_slots),
+        CONTEXT_BAR_EMPTY.to_string().repeat(empty_slots)
+    );
+    format!("󰆼 [{bar}] {percent:.1}%")
 }
 
 fn shorten_path(path: &str, keep_components: usize) -> String {
@@ -444,6 +471,21 @@ mod tests {
             context_segment_colors(80.1),
             (rgb(255, 242, 242), rgb(197, 66, 68))
         );
+    }
+
+    #[test]
+    fn context_usage_label_displays_progress_bar() {
+        assert_eq!(context_usage_label(0.0), "󰆼 [░░░░░░░░░░] 0.0%");
+        assert_eq!(context_usage_label(50.0), "󰆼 [█████░░░░░] 50.0%");
+        assert_eq!(context_usage_label(87.3), "󰆼 [████████░░] 87.3%");
+        assert_eq!(context_usage_label(120.0), "󰆼 [██████████] 120.0%");
+    }
+
+    #[test]
+    fn usable_width_reserves_claude_right_margin() {
+        assert_eq!(usable_terminal_columns(120), 112);
+        assert_eq!(usable_terminal_columns(8), 0);
+        assert_eq!(usable_terminal_columns(5), 0);
     }
 
     #[test]
