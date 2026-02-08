@@ -124,7 +124,7 @@ fn build_statusline(input: &StatusInput) -> String {
             bg: rgb(146, 72, 177),
         },
         Segment {
-            text: format!(" {}", shorten_path(cwd, 3)),
+            text: format!(" {}", folder_name(cwd)),
             fg: rgb(255, 235, 244),
             bg: rgb(238, 96, 146),
         },
@@ -134,7 +134,7 @@ fn build_statusline(input: &StatusInput) -> String {
         && project_dir != cwd
     {
         left_segments.push(Segment {
-            text: format!(" {}", shorten_path(project_dir, 2)),
+            text: format!(" {}", folder_name(project_dir)),
             fg: rgb(255, 243, 234),
             bg: rgb(242, 149, 108),
         });
@@ -319,47 +319,20 @@ fn context_usage_label(percent: f64) -> String {
     format!("󰆼 [{bar}] {percent:.1}%")
 }
 
-fn shorten_path(path: &str, keep_components: usize) -> String {
+fn folder_name(path: &str) -> String {
     if path.is_empty() {
         return ".".to_string();
     }
 
-    let normalized = replace_home_prefix(path);
-
-    if normalized == "/" || normalized == "~" {
-        return normalized;
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "/".to_string();
     }
 
-    let mut components: Vec<&str> = normalized
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect();
-
-    if components.first().is_some_and(|part| *part == "~") {
-        components.remove(0);
-    }
-
-    if components.len() <= keep_components {
-        return normalized;
-    }
-
-    let tail = components[components.len() - keep_components..].join("/");
-    format!("…/{tail}")
-}
-
-fn replace_home_prefix(path: &str) -> String {
-    let Some(home) = env::var_os("HOME") else {
-        return path.to_string();
-    };
-
-    let home = home.to_string_lossy();
-    if path == home {
-        "~".to_string()
-    } else if let Some(rest) = path.strip_prefix(&format!("{home}/")) {
-        format!("~/{rest}")
-    } else {
-        path.to_string()
-    }
+    trimmed
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .map_or_else(|| ".".to_string(), ToString::to_string)
 }
 
 fn render_powerline(segments: &[Segment]) -> (String, usize) {
@@ -489,11 +462,10 @@ mod tests {
     }
 
     #[test]
-    fn path_is_shortened_from_head() {
-        assert_eq!(
-            shorten_path("/Users/alice/work/project/src/bin", 2),
-            "…/src/bin"
-        );
+    fn folder_name_is_extracted() {
+        assert_eq!(folder_name("/Users/alice/work/project/src/bin"), "bin");
+        assert_eq!(folder_name("/tmp/"), "tmp");
+        assert_eq!(folder_name("/"), "/");
     }
 
     #[test]
