@@ -104,8 +104,8 @@ func TestPermissionsLines(t *testing.T) {
 		"\"allow\": [",
 		"  \"a\"",
 		"],",
-		"\"ask\": [],",
 		"\"deny\": [],",
+		"\"ask\": [],",
 		"\"additionalDirectories\": []",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -140,8 +140,8 @@ func TestReplacePermissionsBlock(t *testing.T) {
 		"  \"allow\": [",
 		"    \"a\"",
 		"  ],",
-		"  \"ask\": [],",
 		"  \"deny\": [],",
+		"  \"ask\": [],",
 		"  \"additionalDirectories\": []",
 		"  " + endMarker,
 		"after",

@@ -1,5 +1,4 @@
 use crossterm::{
-    cursor::{MoveLeft, MoveRight},
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal,
 };
@@ -64,8 +63,6 @@ struct Segment {
 }
 
 const POWERLINE_ARROW: char = '\u{e0b0}';
-const LEADING_COLORED_PADDING: &str = "  ";
-const RIGHT_EDGE_JUMP: u16 = 9999;
 
 fn main() -> ExitCode {
     crossterm::style::force_color_output(true);
@@ -145,27 +142,15 @@ fn build_statusline(input: &StatusInput) -> String {
     }
 
     if let Some(percent) = context_usage_percent(input) {
+        let (text_color, fill_color) = context_segment_colors(percent);
         left_segments.push(Segment {
             text: format!("󰆼 {percent:.1}%"),
-            fg: rgb(233, 247, 255),
-            bg: rgb(67, 156, 205),
+            fg: text_color,
+            bg: fill_color,
         });
     }
 
     let (left_styled, left_width) = render_powerline(&left_segments);
-    let (left_prefix, left_prefix_width) = left_segments.first().map_or_else(
-        || (String::new(), 0),
-        |segment| {
-            (
-                format!(
-                    "{}{}",
-                    SetBackgroundColor(segment.bg),
-                    LEADING_COLORED_PADDING
-                ),
-                visible_width(LEADING_COLORED_PADDING),
-            )
-        },
-    );
 
     let version_text = input
         .version
@@ -173,7 +158,7 @@ fn build_statusline(input: &StatusInput) -> String {
         .filter(|value| !value.is_empty())
         .map_or_else(|| "vunknown".to_string(), normalized_version);
 
-    let right_label = format!(" 󰎙 {version_text} ");
+    let right_label = format!("  {version_text} ");
     let right_width = visible_width(&right_label);
     let right_styled = format!(
         "{}{}{}{}",
@@ -183,23 +168,15 @@ fn build_statusline(input: &StatusInput) -> String {
         ResetColor
     );
 
-    let required_width = left_prefix_width + left_width + right_width;
+    let required_width = left_width + right_width;
     if let Some(terminal_width) = terminal_columns()
         && terminal_width > required_width
     {
         let spacing = terminal_width - required_width;
-        return format!(
-            "{left_prefix}{left_styled}{}{right_styled}",
-            " ".repeat(spacing)
-        );
+        return format!("{left_styled}{}{right_styled}", " ".repeat(spacing));
     }
 
-    let move_left = u16::try_from(right_width).unwrap_or(u16::MAX);
-    format!(
-        "{left_prefix}{left_styled}{}{}{right_styled}",
-        MoveRight(RIGHT_EDGE_JUMP),
-        MoveLeft(move_left)
-    )
+    format!("{left_styled} {right_styled}")
 }
 
 fn terminal_columns() -> Option<usize> {
@@ -303,6 +280,16 @@ fn context_usage_percent(input: &StatusInput) -> Option<f64> {
     let window_size = u32::try_from(window_size).unwrap_or(u32::MAX);
 
     Some(f64::from(used_tokens) * 100.0 / f64::from(window_size))
+}
+
+fn context_segment_colors(percent: f64) -> (Color, Color) {
+    if percent > 80.0 {
+        (rgb(255, 242, 242), rgb(197, 66, 68))
+    } else if percent > 50.0 {
+        (rgb(41, 28, 0), rgb(232, 186, 77))
+    } else {
+        (rgb(233, 247, 255), rgb(67, 156, 205))
+    }
 }
 
 fn shorten_path(path: &str, keep_components: usize) -> String {
@@ -440,30 +427,31 @@ mod tests {
     }
 
     #[test]
+    fn context_colors_change_at_thresholds() {
+        assert_eq!(
+            context_segment_colors(50.0),
+            (rgb(233, 247, 255), rgb(67, 156, 205))
+        );
+        assert_eq!(
+            context_segment_colors(50.1),
+            (rgb(41, 28, 0), rgb(232, 186, 77))
+        );
+        assert_eq!(
+            context_segment_colors(80.0),
+            (rgb(41, 28, 0), rgb(232, 186, 77))
+        );
+        assert_eq!(
+            context_segment_colors(80.1),
+            (rgb(255, 242, 242), rgb(197, 66, 68))
+        );
+    }
+
+    #[test]
     fn path_is_shortened_from_head() {
         assert_eq!(
             shorten_path("/Users/alice/work/project/src/bin", 2),
             "…/src/bin"
         );
-    }
-
-    #[test]
-    fn leading_padding_is_colored() {
-        let input = StatusInput {
-            _event_name: None,
-            cwd: None,
-            model: None,
-            workspace: None,
-            version: None,
-            context_window: None,
-        };
-        let line = build_statusline(&input);
-        let expected_prefix = format!(
-            "{}{}",
-            SetBackgroundColor(rgb(146, 72, 177)),
-            LEADING_COLORED_PADDING
-        );
-        assert!(line.starts_with(&expected_prefix));
     }
 
     #[test]

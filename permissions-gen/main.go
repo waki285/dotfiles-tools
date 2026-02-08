@@ -44,8 +44,8 @@ type claudeConfig struct {
 
 type claudePermissions struct {
 	Allow                 []string `json:"allow"`
-	Ask                   []string `json:"ask"`
 	Deny                  []string `json:"deny"`
+	Ask                   []string `json:"ask"`
 	AdditionalDirectories []string `json:"additionalDirectories"`
 }
 
@@ -283,8 +283,8 @@ func buildClaudePermissions(cfg config) claudePermissions {
 
 	return claudePermissions{
 		Allow:                 allow,
-		Ask:                   ensureSlice(ask),
 		Deny:                  ensureSlice(deny),
+		Ask:                   ensureSlice(ask),
 		AdditionalDirectories: ensureSlice(normalizeList(cfg.Claude.AdditionalDirectories, false)),
 	}
 }
