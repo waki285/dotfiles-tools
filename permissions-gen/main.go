@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -88,6 +89,18 @@ func (c *opencodeSectionConfig) UnmarshalYAML(value *yaml.Node) error {
 const bashSentinel = "__BASH__"
 
 var quiet bool
+
+var markerPattern = regexp.MustCompile(`{{\s*-?\s*/\*\s*PERMISSIONS:(START|END)\s*\*/\s*-?\s*}}`)
+
+type markerMatch struct {
+	pos  int
+	text string
+}
+
+type markerPair struct {
+	start markerMatch
+	end   markerMatch
+}
 
 func main() {
 	dataPath := flag.String("data", "", "path to permissions YAML")
@@ -290,27 +303,24 @@ func buildClaudePermissions(cfg config) claudePermissions {
 }
 
 func replacePermissionsBlock(contents string, perm claudePermissions) (string, error) {
-	start := strings.Index(contents, startMarker)
-	end := strings.Index(contents, endMarker)
-
-	if start != -1 && end != -1 && start < end {
-		return replaceWithMarkers(contents, perm, start, end)
+	if markers, ok := findMarkerPair(contents); ok {
+		return replaceWithMarkers(contents, perm, markers)
 	}
 
 	return replacePermissionsJSON(contents, perm)
 }
 
-func replaceWithMarkers(contents string, perm claudePermissions, start, end int) (string, error) {
+func replaceWithMarkers(contents string, perm claudePermissions, markers markerPair) (string, error) {
 	lines, err := permissionsLines(perm)
 	if err != nil {
 		return "", err
 	}
 
-	return replaceBlockWithLines(contents, start, end, lines)
+	return replaceBlockWithLines(contents, markers, lines)
 }
 
-func replaceBlockWithLines(contents string, start, end int, lines []string) (string, error) {
-	indent, err := lineIndent(contents, start)
+func replaceBlockWithLines(contents string, markers markerPair, lines []string) (string, error) {
+	indent, err := lineIndent(contents, markers.start.pos)
 	if err != nil {
 		return "", err
 	}
@@ -319,9 +329,9 @@ func replaceBlockWithLines(contents string, start, end int, lines []string) (str
 		lines[i] = indent + line
 	}
 
-	block := startMarker + "\n" + strings.Join(lines, "\n") + "\n" + indent + endMarker
+	block := markers.start.text + "\n" + strings.Join(lines, "\n") + "\n" + indent + markers.end.text
 
-	return contents[:start] + block + contents[end+len(endMarker):], nil
+	return contents[:markers.start.pos] + block + contents[markers.end.pos+len(markers.end.text):], nil
 }
 
 func replacePermissionsJSON(contents string, perm claudePermissions) (string, error) {
@@ -823,12 +833,11 @@ func opencodePermissionsLinesFromJSON(permissionsJSON string) ([]string, error) 
 }
 
 func replaceOpencodePermissions(contents, permissionsJSON string, lines []string) (string, error) {
-	start := strings.Index(contents, startMarker)
-	end := strings.Index(contents, endMarker)
-	if start == -1 || end == -1 || start >= end {
+	markers, ok := findMarkerPair(contents)
+	if !ok {
 		return replaceOpencodePermissionsJSON(contents, permissionsJSON)
 	}
-	return replaceBlockWithLines(contents, start, end, lines)
+	return replaceBlockWithLines(contents, markers, lines)
 }
 
 func replaceOpencodePermissionsJSON(contents, permissionsJSON string) (string, error) {
@@ -860,4 +869,49 @@ func jsonString(value string) string {
 		return fmt.Sprintf("%q", value)
 	}
 	return string(data)
+}
+
+func findMarkerPair(contents string) (markerPair, bool) {
+	matches := markerPattern.FindAllStringSubmatchIndex(contents, -1)
+	if len(matches) == 0 {
+		return markerPair{}, false
+	}
+
+	var start markerMatch
+	foundStart := false
+	for _, m := range matches {
+		if len(m) < 4 {
+			continue
+		}
+
+		matchStart, matchEnd := m[0], m[1]
+		labelStart, labelEnd := m[2], m[3]
+		label := contents[labelStart:labelEnd]
+
+		if !foundStart {
+			if label != "START" {
+				continue
+			}
+			start = markerMatch{
+				pos:  matchStart,
+				text: contents[matchStart:matchEnd],
+			}
+			foundStart = true
+			continue
+		}
+
+		if label != "END" {
+			continue
+		}
+		end := markerMatch{
+			pos:  matchStart,
+			text: contents[matchStart:matchEnd],
+		}
+		if start.pos >= end.pos {
+			return markerPair{}, false
+		}
+		return markerPair{start: start, end: end}, true
+	}
+
+	return markerPair{}, false
 }

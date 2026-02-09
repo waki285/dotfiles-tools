@@ -153,6 +153,48 @@ func TestReplacePermissionsBlock(t *testing.T) {
 	}
 }
 
+func TestReplacePermissionsBlock_WithTrimMarkers(t *testing.T) {
+	start := "{{- /* PERMISSIONS:START */}}"
+	end := "{{/* PERMISSIONS:END */ -}}"
+	input := strings.Join([]string{
+		"before",
+		"  " + start,
+		"  \"old\": true",
+		"  " + end,
+		"after",
+		"",
+	}, "\n")
+	perm := claudePermissions{
+		Allow:                 []string{"a"},
+		Ask:                   []string{},
+		Deny:                  []string{},
+		AdditionalDirectories: []string{},
+	}
+
+	got, err := replacePermissionsBlock(input, perm)
+	if err != nil {
+		t.Fatalf("replacePermissionsBlock() error = %v", err)
+	}
+
+	want := strings.Join([]string{
+		"before",
+		"  " + start,
+		"  \"allow\": [",
+		"    \"a\"",
+		"  ],",
+		"  \"deny\": [],",
+		"  \"ask\": [],",
+		"  \"additionalDirectories\": []",
+		"  " + end,
+		"after",
+		"",
+	}, "\n")
+
+	if got != want {
+		t.Fatalf("replacePermissionsBlock() output mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 func TestReplacePermissionsBlock_MissingMarkers(t *testing.T) {
 	_, err := replacePermissionsBlock("no markers here", claudePermissions{})
 	if err == nil {
@@ -277,6 +319,64 @@ func TestReplaceOpencodePermissions_WithMarkers(t *testing.T) {
 		"      \"*\": \"allow\"",
 		"    }",
 		"    " + endMarker,
+		"  }",
+		"}",
+		"",
+	}, "\n")
+	if got != want {
+		t.Fatalf("replaceOpencodePermissions() output mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestReplaceOpencodePermissions_WithTrimMarkers(t *testing.T) {
+	start := "{{- /* PERMISSIONS:START */}}"
+	end := "{{/* PERMISSIONS:END */ -}}"
+	input := strings.Join([]string{
+		"{",
+		"  \"permission\": {",
+		"    " + start,
+		"    \"old\": \"value\"",
+		"    " + end,
+		"  }",
+		"}",
+		"",
+	}, "\n")
+	sections := []opencodeSection{
+		{
+			Name: "bash",
+			Rules: []opencodeRule{
+				{Pattern: "*", Decision: "ask"},
+			},
+		},
+		{
+			Name: "webfetch",
+			Rules: []opencodeRule{
+				{Pattern: "*", Decision: "allow"},
+			},
+		},
+	}
+	permissionsJSON := renderOpencodePermissionsJSON(sections)
+	lines, err := opencodePermissionsLinesFromJSON(permissionsJSON)
+	if err != nil {
+		t.Fatalf("opencodePermissionsLinesFromJSON() error = %v", err)
+	}
+
+	got, err := replaceOpencodePermissions(input, permissionsJSON, lines)
+	if err != nil {
+		t.Fatalf("replaceOpencodePermissions() error = %v", err)
+	}
+
+	want := strings.Join([]string{
+		"{",
+		"  \"permission\": {",
+		"    " + start,
+		"    \"bash\": {",
+		"      \"*\": \"ask\"",
+		"    },",
+		"    \"webfetch\": {",
+		"      \"*\": \"allow\"",
+		"    }",
+		"    " + end,
 		"  }",
 		"}",
 		"",
