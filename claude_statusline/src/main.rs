@@ -692,18 +692,12 @@ mod tests {
 
     #[test]
     fn prettify_gpt4_is_not_reasoning() {
-        assert_eq!(
-            prettify_model_name("gpt-4.1-2025-04-14"),
-            "GPT 4.1"
-        );
+        assert_eq!(prettify_model_name("gpt-4.1-2025-04-14"), "GPT 4.1");
     }
 
     #[test]
     fn prettify_gpt5_mini_is_not_reasoning() {
-        assert_eq!(
-            prettify_model_name("gpt-5-mini"),
-            "GPT 5 Mini"
-        );
+        assert_eq!(prettify_model_name("gpt-5-mini"), "GPT 5 Mini");
     }
 
     #[test]
