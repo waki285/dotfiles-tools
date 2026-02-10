@@ -1,10 +1,6 @@
-use crossterm::{
-    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal,
-};
+use crossterm::style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor};
 use serde::Deserialize;
 use std::{
-    env,
     fmt::Write as _,
     io::{self, Read},
     process::Command,
@@ -19,8 +15,15 @@ struct StatusInput {
     cwd: Option<String>,
     model: Option<ModelInfo>,
     workspace: Option<WorkspaceInfo>,
+    #[expect(dead_code)]
     version: Option<String>,
+    cost: Option<CostInfo>,
     context_window: Option<ContextWindow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CostInfo {
+    total_cost_usd: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,8 +66,6 @@ struct Segment {
 }
 
 const POWERLINE_ARROW: char = '\u{e0b0}';
-const RIGHT_ALIGNMENT_GUARD_COLUMNS: usize = 1;
-const CLAUDE_RESERVED_RIGHT_COLUMNS: usize = 8;
 const CONTEXT_BAR_SLOTS: usize = 10;
 const CONTEXT_BAR_FILLED: char = '█';
 const CONTEXT_BAR_EMPTY: char = '░';
@@ -97,12 +98,13 @@ fn main() -> ExitCode {
 }
 
 fn build_statusline(input: &StatusInput) -> String {
-    let model = input
+    let raw_model = input
         .model
         .as_ref()
         .and_then(|value| value.display_name.as_deref().or(value.id.as_deref()))
         .filter(|value| !value.is_empty())
         .unwrap_or("unknown");
+    let model = prettify_model_name(raw_model);
 
     let cwd = input
         .workspace
@@ -119,12 +121,12 @@ fn build_statusline(input: &StatusInput) -> String {
 
     let mut left_segments = vec![
         Segment {
-            text: format!(" {model}"),
+            text: format!("\u{f4b8} {model}"),
             fg: rgb(245, 240, 255),
             bg: rgb(146, 72, 177),
         },
         Segment {
-            text: format!(" {}", folder_name(cwd)),
+            text: format!("\u{f07c} {}", folder_name(cwd)),
             fg: rgb(255, 235, 244),
             bg: rgb(238, 96, 146),
         },
@@ -134,7 +136,7 @@ fn build_statusline(input: &StatusInput) -> String {
         && project_dir != cwd
     {
         left_segments.push(Segment {
-            text: format!(" {}", folder_name(project_dir)),
+            text: format!("\u{e5fb} {}", folder_name(project_dir)),
             fg: rgb(255, 243, 234),
             bg: rgb(242, 149, 108),
         });
@@ -142,9 +144,17 @@ fn build_statusline(input: &StatusInput) -> String {
 
     if let Some(git_ref) = git_ref_for_dir(git_lookup_dir) {
         left_segments.push(Segment {
-            text: format!(" {git_ref}"),
+            text: format!("\u{e725} {git_ref}"),
             fg: rgb(232, 247, 239),
             bg: rgb(72, 153, 120),
+        });
+    }
+
+    if let Some(cost_label) = format_cost(input) {
+        left_segments.push(Segment {
+            text: cost_label,
+            fg: rgb(235, 245, 255),
+            bg: rgb(48, 120, 168),
         });
     }
 
@@ -157,47 +167,179 @@ fn build_statusline(input: &StatusInput) -> String {
         });
     }
 
-    let (left_styled, left_width) = render_powerline(&left_segments);
+    let (left_styled, _left_width) = render_powerline(&left_segments);
 
-    let version_text = input
-        .version
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .map_or_else(|| "vunknown".to_string(), normalized_version);
-
-    let right_label = format!("  {version_text}");
-    let right_width = visible_width(&right_label);
-    let right_styled = format!(
-        "{}{}{}{}",
-        SetBackgroundColor(rgb(48, 120, 168)),
-        SetForegroundColor(rgb(233, 245, 255)),
-        right_label,
-        ResetColor
-    );
-
-    let required_width = left_width + right_width + RIGHT_ALIGNMENT_GUARD_COLUMNS;
-    if let Some(terminal_width) = terminal_columns() {
-        let usable_width = usable_terminal_columns(terminal_width);
-        if usable_width > required_width {
-            let spacing = usable_width - required_width;
-            return format!("{left_styled}{}{right_styled}", " ".repeat(spacing));
-        }
-    }
-
-    format!("{left_styled} {right_styled}")
+    left_styled
 }
 
-const fn usable_terminal_columns(terminal_width: usize) -> usize {
-    terminal_width.saturating_sub(CLAUDE_RESERVED_RIGHT_COLUMNS)
+/// Transform a raw model ID into a human-friendly display name.
+///
+/// Examples:
+///   `ag/claude-opus-4-6-thinking`      -> `Opus 4.6 🧠`
+///   `ag/claude-opus-4-6-thinking[1m]`  -> `Opus 4.6 (1M) 🧠`
+///   `ag/claude-sonnet-4-5-thinking`    -> `Sonnet 4.5 🧠`
+///   `ag/gemini-2.5-flash-lite[1m]`     -> `Gemini 2.5 Flash Lite (1M)`
+///   `ag/gemini-2.5-pro`                -> `Gemini 2.5 Pro 🧠`
+///   `claude-opus-4.5`                  -> `Opus 4.5`
+///   `v/gpt-5.3-codex(xhigh)`          -> `GPT 5.3 Codex (xhigh) 🧠`
+///   `gpt-4.1-2025-04-14`              -> `GPT 4.1`
+///   `unknown-model`                    -> `unknown-model`
+fn prettify_model_name(raw: &str) -> String {
+    let (body, qualifier) = extract_qualifier(raw);
+
+    // Strip routing prefixes: "ag/", "v/"
+    let body = body
+        .strip_prefix("ag/")
+        .or_else(|| body.strip_prefix("v/"))
+        .unwrap_or(body);
+
+    let is_thinking = body.ends_with("-thinking");
+    let body = body.strip_suffix("-thinking").unwrap_or(body);
+
+    let (pretty, is_reasoning) = if let Some(rest) = body.strip_prefix("claude-") {
+        (prettify_claude(rest), is_thinking)
+    } else if let Some(rest) = body.strip_prefix("gemini-") {
+        let parts: Vec<&str> = rest.split('-').collect();
+        let is_pro = parts.iter().any(|p| p.eq_ignore_ascii_case("pro"));
+        (prettify_generic("Gemini", rest), is_pro)
+    } else if let Some(rest) = body.strip_prefix("gpt-") {
+        let reasoning = is_gpt_reasoning(rest, qualifier.as_deref());
+        (prettify_generic("GPT", rest), reasoning)
+    } else {
+        return raw.to_string();
+    };
+
+    let mut result = match qualifier {
+        Some(q) => format!("{pretty} ({q})"),
+        None => pretty,
+    };
+
+    if is_reasoning {
+        result.push_str(" 🧠");
+    }
+
+    result
 }
 
-fn terminal_columns() -> Option<usize> {
-    if let Ok((columns, _)) = terminal::size() {
-        return Some(usize::from(columns));
+/// Determine if a GPT model qualifies as a reasoning model.
+///
+/// Rules:
+/// - GPT Codex (non-mini) with medium+ reasoning qualifier -> true
+/// - GPT 5+ (non-mini) -> true
+fn is_gpt_reasoning(rest: &str, qualifier: Option<&str>) -> bool {
+    let parts: Vec<&str> = rest.split('-').collect();
+    if parts.iter().any(|p| p.eq_ignore_ascii_case("mini")) {
+        return false;
     }
-    env::var("COLUMNS")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
+
+    let is_codex = parts.iter().any(|p| p.eq_ignore_ascii_case("codex"));
+    if is_codex {
+        return qualifier.is_some_and(|q| {
+            let q_lower = q.to_ascii_lowercase();
+            q_lower == "medium" || q_lower == "high" || q_lower == "xhigh"
+        });
+    }
+
+    // GPT 5+ (non-mini)
+    parts
+        .first()
+        .and_then(|v| v.split('.').next())
+        .and_then(|major| major.parse::<u32>().ok())
+        .is_some_and(|major| major >= 5)
+}
+
+/// Extract a trailing qualifier from a model ID.
+/// Handles both `[...]` and `(...)` syntax.
+/// Returns `(body, Some(inner))` or `(original, None)`.
+fn extract_qualifier(raw: &str) -> (&str, Option<String>) {
+    if let Some(start) = raw.rfind('[')
+        && raw.ends_with(']')
+    {
+        let inner = &raw[start + 1..raw.len() - 1];
+        return (&raw[..start], Some(inner.to_uppercase()));
+    }
+    if let Some(start) = raw.rfind('(')
+        && raw.ends_with(')')
+    {
+        let inner = &raw[start + 1..raw.len() - 1];
+        return (&raw[..start], Some(inner.to_string()));
+    }
+    (raw, None)
+}
+
+/// Prettify a Claude model name after "claude-" prefix is stripped.
+/// e.g. "opus-4-6" -> "Opus 4.6", "sonnet-4-5" -> "Sonnet 4.5"
+fn prettify_claude(rest: &str) -> String {
+    let parts: Vec<&str> = rest.splitn(2, '-').collect();
+    if parts.len() < 2 {
+        return title_case(rest);
+    }
+
+    let tier = title_case(parts[0]);
+    let version = dotted_version(parts[1]);
+    format!("{tier} {version}")
+}
+
+/// Prettify a non-Claude model (Gemini, GPT) after the prefix is stripped.
+/// e.g. brand="GPT", rest="5.3-codex" -> "GPT 5.3 Codex"
+/// e.g. brand="Gemini", rest="2.5-flash-lite" -> "Gemini 2.5 Flash Lite"
+/// e.g. brand="GPT", rest="4.1-2025-04-14" -> "GPT 4.1"
+fn prettify_generic(brand: &str, rest: &str) -> String {
+    let (version, name_parts) = split_version_and_name(rest);
+    if name_parts.is_empty() {
+        format!("{brand} {version}")
+    } else {
+        let name = name_parts
+            .iter()
+            .map(|p| title_case(p))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{brand} {version} {name}")
+    }
+}
+
+/// Split version and name segments from a model suffix.
+///
+/// - `5.3-codex` -> `("5.3", ["codex"])`
+/// - `2.5-flash-lite` -> `("2.5", ["flash", "lite"])`
+/// - `4.1-2025-04-14` -> `("4.1", [])` (date suffixes are dropped)
+fn split_version_and_name(rest: &str) -> (String, Vec<&str>) {
+    let parts: Vec<&str> = rest.split('-').collect();
+    if parts.is_empty() {
+        return (rest.to_string(), vec![]);
+    }
+
+    let version = parts[0].to_string();
+    let remaining = &parts[1..];
+
+    // Drop date suffixes (YYYY-MM-DD pattern)
+    if remaining.len() >= 3
+        && remaining[0].len() == 4
+        && remaining[0].chars().all(|c| c.is_ascii_digit())
+        && remaining[1].len() == 2
+        && remaining[2].len() == 2
+    {
+        return (version, vec![]);
+    }
+
+    (version, remaining.to_vec())
+}
+
+/// Convert a hyphenated version like "4-6" to "4.6".
+/// If it already contains dots (e.g. "4.5"), return as-is.
+fn dotted_version(version: &str) -> String {
+    if version.contains('.') {
+        return version.to_string();
+    }
+    version.replace('-', ".")
+}
+
+fn title_case(word: &str) -> String {
+    let mut chars = word.chars();
+    chars.next().map_or_else(String::new, |first| {
+        let upper: String = first.to_uppercase().collect();
+        format!("{upper}{}", chars.as_str())
+    })
 }
 
 fn git_ref_for_dir(dir: &str) -> Option<String> {
@@ -256,14 +398,6 @@ fn truncate_to_width(value: &str, max_width: usize) -> String {
     result
 }
 
-fn normalized_version(version: &str) -> String {
-    if version.starts_with('v') {
-        version.to_string()
-    } else {
-        format!("v{version}")
-    }
-}
-
 fn context_usage_percent(input: &StatusInput) -> Option<f64> {
     let context = input.context_window.as_ref()?;
     let window_size = context.window_size?;
@@ -294,8 +428,16 @@ fn context_usage_percent(input: &StatusInput) -> Option<f64> {
     Some(f64::from(used_tokens) * 100.0 / f64::from(window_size))
 }
 
+fn format_cost(input: &StatusInput) -> Option<String> {
+    let cost = input.cost.as_ref()?.total_cost_usd?;
+    if cost <= 0.0 {
+        return None;
+    }
+    Some(format!("$ {cost:.2}"))
+}
+
 fn context_segment_colors(percent: f64) -> (Color, Color) {
-    if percent > 80.0 {
+    if percent > 75.0 {
         (rgb(255, 242, 242), rgb(197, 66, 68))
     } else if percent > 50.0 {
         (rgb(41, 28, 0), rgb(232, 186, 77))
@@ -396,12 +538,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_prefix_is_normalized() {
-        assert_eq!(normalized_version("1.2.3"), "v1.2.3");
-        assert_eq!(normalized_version("v1.2.3"), "v1.2.3");
-    }
-
-    #[test]
     fn context_usage_prefers_current_usage() {
         let input = StatusInput {
             _event_name: None,
@@ -409,6 +545,7 @@ mod tests {
             model: None,
             workspace: None,
             version: None,
+            cost: None,
             context_window: Some(ContextWindow {
                 total_input_tokens: Some(1),
                 total_output_tokens: Some(1),
@@ -437,11 +574,11 @@ mod tests {
             (rgb(41, 28, 0), rgb(232, 186, 77))
         );
         assert_eq!(
-            context_segment_colors(80.0),
+            context_segment_colors(75.0),
             (rgb(41, 28, 0), rgb(232, 186, 77))
         );
         assert_eq!(
-            context_segment_colors(80.1),
+            context_segment_colors(75.1),
             (rgb(255, 242, 242), rgb(197, 66, 68))
         );
     }
@@ -452,13 +589,6 @@ mod tests {
         assert_eq!(context_usage_label(50.0), "󰆼 [█████░░░░░] 50.0%");
         assert_eq!(context_usage_label(87.3), "󰆼 [████████░░] 87.3%");
         assert_eq!(context_usage_label(120.0), "󰆼 [██████████] 120.0%");
-    }
-
-    #[test]
-    fn usable_width_reserves_claude_right_margin() {
-        assert_eq!(usable_terminal_columns(120), 112);
-        assert_eq!(usable_terminal_columns(8), 0);
-        assert_eq!(usable_terminal_columns(5), 0);
     }
 
     #[test]
@@ -474,5 +604,146 @@ mod tests {
         let truncated = truncate_to_width(original, 16);
         assert!(visible_width(&truncated) <= 16);
         assert!(truncated.ends_with('…'));
+    }
+
+    #[test]
+    fn prettify_claude_opus() {
+        assert_eq!(
+            prettify_model_name("ag/claude-opus-4-6-thinking"),
+            "Opus 4.6 🧠"
+        );
+    }
+
+    #[test]
+    fn prettify_claude_opus_with_context() {
+        assert_eq!(
+            prettify_model_name("ag/claude-opus-4-6-thinking[1m]"),
+            "Opus 4.6 (1M) 🧠"
+        );
+    }
+
+    #[test]
+    fn prettify_claude_sonnet() {
+        assert_eq!(
+            prettify_model_name("ag/claude-sonnet-4-5-thinking"),
+            "Sonnet 4.5 🧠"
+        );
+    }
+
+    #[test]
+    fn prettify_claude_without_thinking() {
+        assert_eq!(prettify_model_name("claude-opus-4.5"), "Opus 4.5");
+        assert_eq!(prettify_model_name("claude-sonnet-4.5"), "Sonnet 4.5");
+    }
+
+    #[test]
+    fn prettify_gemini_pro_is_reasoning() {
+        assert_eq!(
+            prettify_model_name("ag/gemini-2.5-pro"),
+            "Gemini 2.5 Pro 🧠"
+        );
+    }
+
+    #[test]
+    fn prettify_gemini_flash_is_not_reasoning() {
+        assert_eq!(
+            prettify_model_name("ag/gemini-2.5-flash-lite[1m]"),
+            "Gemini 2.5 Flash Lite (1M)"
+        );
+    }
+
+    #[test]
+    fn prettify_gpt_codex_with_reasoning() {
+        assert_eq!(
+            prettify_model_name("v/gpt-5.3-codex(xhigh)"),
+            "GPT 5.3 Codex (xhigh) 🧠"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.3-codex(high)"),
+            "GPT 5.3 Codex (high) 🧠"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.3-codex(medium)"),
+            "GPT 5.3 Codex (medium) 🧠"
+        );
+    }
+
+    #[test]
+    fn prettify_gpt_codex_low_reasoning_is_not_thinking() {
+        assert_eq!(
+            prettify_model_name("gpt-5.3-codex(low)"),
+            "GPT 5.3 Codex (low)"
+        );
+    }
+
+    #[test]
+    fn prettify_gpt_codex_mini_is_not_reasoning() {
+        assert_eq!(
+            prettify_model_name("gpt-5.3-codex-mini(high)"),
+            "GPT 5.3 Codex Mini (high)"
+        );
+    }
+
+    #[test]
+    fn prettify_gpt5_is_reasoning() {
+        assert_eq!(prettify_model_name("gpt-5"), "GPT 5 🧠");
+        assert_eq!(prettify_model_name("gpt-5.1"), "GPT 5.1 🧠");
+    }
+
+    #[test]
+    fn prettify_gpt4_is_not_reasoning() {
+        assert_eq!(
+            prettify_model_name("gpt-4.1-2025-04-14"),
+            "GPT 4.1"
+        );
+    }
+
+    #[test]
+    fn prettify_gpt5_mini_is_not_reasoning() {
+        assert_eq!(
+            prettify_model_name("gpt-5-mini"),
+            "GPT 5 Mini"
+        );
+    }
+
+    #[test]
+    fn prettify_unknown_passthrough() {
+        assert_eq!(prettify_model_name("unknown"), "unknown");
+        assert_eq!(
+            prettify_model_name("some-custom-model"),
+            "some-custom-model"
+        );
+    }
+
+    fn make_input_with_cost(cost: Option<f64>) -> StatusInput {
+        StatusInput {
+            _event_name: None,
+            cwd: None,
+            model: None,
+            workspace: None,
+            version: None,
+            cost: cost.map(|c| CostInfo {
+                total_cost_usd: Some(c),
+            }),
+            context_window: None,
+        }
+    }
+
+    #[test]
+    fn format_cost_displays_usd() {
+        let input = make_input_with_cost(Some(1.234));
+        assert_eq!(format_cost(&input).unwrap(), "$ 1.23");
+    }
+
+    #[test]
+    fn format_cost_zero_returns_none() {
+        let input = make_input_with_cost(Some(0.0));
+        assert!(format_cost(&input).is_none());
+    }
+
+    #[test]
+    fn format_cost_none_returns_none() {
+        let input = make_input_with_cost(None);
+        assert!(format_cost(&input).is_none());
     }
 }
