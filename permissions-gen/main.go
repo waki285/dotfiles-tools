@@ -40,6 +40,7 @@ type claudeConfig struct {
 	Allow                 []string `yaml:"allow"`
 	Ask                   []string `yaml:"ask"`
 	Deny                  []string `yaml:"deny"`
+	DefaultMode           string   `yaml:"defaultMode"`
 	AdditionalDirectories []string `yaml:"additionalDirectories"`
 }
 
@@ -47,6 +48,7 @@ type claudePermissions struct {
 	Allow                 []string `json:"allow"`
 	Deny                  []string `json:"deny"`
 	Ask                   []string `json:"ask"`
+	DefaultMode           *string  `json:"defaultMode,omitempty"`
 	AdditionalDirectories []string `json:"additionalDirectories"`
 }
 
@@ -293,13 +295,28 @@ func buildClaudePermissions(cfg config) claudePermissions {
 	allow := expandWithBash(cfg.Claude.Allow, cfg.Bash.Allow)
 	ask := expandWithBash(cfg.Claude.Ask, cfg.Bash.Ask)
 	deny := expandWithBash(cfg.Claude.Deny, cfg.Bash.Deny)
+	defaultMode := optionalString(strings.TrimSpace(cfg.Claude.DefaultMode))
 
 	return claudePermissions{
-		Allow:                 allow,
-		Deny:                  ensureSlice(deny),
-		Ask:                   ensureSlice(ask),
-		AdditionalDirectories: ensureSlice(normalizeList(cfg.Claude.AdditionalDirectories, false)),
+		Allow:                 expandTildeForTemplate(allow),
+		Deny:                  expandTildeForTemplate(ensureSlice(deny)),
+		Ask:                   expandTildeForTemplate(ensureSlice(ask)),
+		DefaultMode:           defaultMode,
+		AdditionalDirectories: expandTildeForTemplate(ensureSlice(normalizeList(cfg.Claude.AdditionalDirectories, false))),
 	}
+}
+
+// expandTildeForTemplate replaces ~ with {{ .chezmoi.homeDir }} so the
+// generated .tmpl file is portable across machines.
+func expandTildeForTemplate(values []string) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = strings.ReplaceAll(v, "~/", "{{ .chezmoi.homeDir }}/")
+		if out[i] == "~" {
+			out[i] = "{{ .chezmoi.homeDir }}"
+		}
+	}
+	return out
 }
 
 func replacePermissionsBlock(contents string, perm claudePermissions) (string, error) {
@@ -472,6 +489,13 @@ func ensureSlice(values []string) []string {
 		return []string{}
 	}
 	return values
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 type codexRule struct {

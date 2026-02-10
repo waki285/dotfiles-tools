@@ -113,6 +113,34 @@ func TestPermissionsLines(t *testing.T) {
 	}
 }
 
+func TestPermissionsLines_WithDefaultMode(t *testing.T) {
+	mode := "acceptEdits"
+	perm := claudePermissions{
+		Allow:                 []string{"a"},
+		Ask:                   []string{},
+		Deny:                  []string{},
+		DefaultMode:           &mode,
+		AdditionalDirectories: []string{},
+	}
+
+	got, err := permissionsLines(perm)
+	if err != nil {
+		t.Fatalf("permissionsLines() error = %v", err)
+	}
+	want := []string{
+		"\"allow\": [",
+		"  \"a\"",
+		"],",
+		"\"deny\": [],",
+		"\"ask\": [],",
+		"\"defaultMode\": \"acceptEdits\",",
+		"\"additionalDirectories\": []",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("permissionsLines() = %#v, want %#v", got, want)
+	}
+}
+
 func TestReplacePermissionsBlock(t *testing.T) {
 	input := strings.Join([]string{
 		"before",
@@ -234,6 +262,22 @@ func TestBuildCodexDecisionRules_GroupingAndOrder(t *testing.T) {
 	second := rules[1]
 	if !reflect.DeepEqual(second.PatternPrefix, []string{"ls"}) || len(second.PatternAlts) != 0 {
 		t.Fatalf("second rule = %#v, want prefix [\"ls\"] with no alts", second)
+	}
+}
+
+func TestBuildClaudePermissions_DefaultMode(t *testing.T) {
+	cfg := config{
+		Claude: claudeConfig{
+			DefaultMode: " acceptEdits ",
+		},
+	}
+
+	got := buildClaudePermissions(cfg)
+	if got.DefaultMode == nil {
+		t.Fatal("buildClaudePermissions().DefaultMode is nil, want non-nil")
+	}
+	if *got.DefaultMode != "acceptEdits" {
+		t.Fatalf("buildClaudePermissions().DefaultMode = %q, want %q", *got.DefaultMode, "acceptEdits")
 	}
 }
 
