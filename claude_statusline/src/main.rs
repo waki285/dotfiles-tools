@@ -466,13 +466,13 @@ fn folder_name(path: &str) -> String {
         return ".".to_string();
     }
 
-    let trimmed = path.trim_end_matches('/');
+    let trimmed = path.trim_end_matches(['/', '\\']);
     if trimmed.is_empty() {
         return "/".to_string();
     }
 
     trimmed
-        .rsplit('/')
+        .rsplit(['/', '\\'])
         .find(|part| !part.is_empty())
         .map_or_else(|| ".".to_string(), ToString::to_string)
 }
@@ -596,6 +596,9 @@ mod tests {
         assert_eq!(folder_name("/Users/alice/work/project/src/bin"), "bin");
         assert_eq!(folder_name("/tmp/"), "tmp");
         assert_eq!(folder_name("/"), "/");
+        assert_eq!(folder_name(r"V:\Projects\ctf"), "ctf");
+        assert_eq!(folder_name(r"C:\Users\alice\work"), "work");
+        assert_eq!(folder_name(r"C:\Users\alice\work\"), "work");
     }
 
     #[test]
