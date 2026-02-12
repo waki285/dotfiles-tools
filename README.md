@@ -48,8 +48,9 @@ Displayed fields:
 - Model (`model.display_name` or `model.id`)
 - CWD (`workspace.current_dir` or `cwd`)
 - Project directory when different from CWD (`workspace.project_dir`)
+- Git branch/ref (from project or CWD)
+- Session cost when > $0.00 (`cost.total_cost_usd`)
 - Context usage percentage (`context_window.current_usage` / `context_window_size`)
-- Claude version (`version`) aligned to the right
 
 ## permissions-gen
 

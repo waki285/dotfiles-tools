@@ -163,8 +163,15 @@ jobs:
             - `claude_statusline-windows-arm64.exe` - Windows on ARM64 (static)
 
             ### Usage
-            ```bash
-            ~/.claude/hooks/claude_statusline < status.json
+            Place the binary at `~/.claude/hooks/claude_statusline` and configure `~/.claude/settings.json`:
+            ```json
+            {
+              "statusLine": {
+                "type": "command",
+                "command": "$HOME/.claude/hooks/claude_statusline",
+                "padding": 0
+              }
+            }
             ```
 
             ### Verification

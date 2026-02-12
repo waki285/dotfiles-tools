@@ -40,7 +40,9 @@ struct WorkspaceInfo {
 
 #[derive(Debug, Deserialize)]
 struct ContextWindow {
+    #[expect(dead_code)]
     total_input_tokens: Option<u64>,
+    #[expect(dead_code)]
     total_output_tokens: Option<u64>,
     #[serde(rename = "context_window_size")]
     window_size: Option<u64>,
@@ -405,22 +407,17 @@ fn context_usage_percent(input: &StatusInput) -> Option<f64> {
         return None;
     }
 
-    let used_tokens = context.current_usage.as_ref().map_or_else(
-        || {
-            context
-                .total_input_tokens
-                .unwrap_or(0)
-                .saturating_add(context.total_output_tokens.unwrap_or(0))
-        },
-        |current_usage| {
-            current_usage
-                .input
-                .unwrap_or(0)
-                .saturating_add(current_usage.output.unwrap_or(0))
-                .saturating_add(current_usage.cache_creation_input.unwrap_or(0))
-                .saturating_add(current_usage.cache_read_input.unwrap_or(0))
-        },
-    );
+    // Only use current_usage for context window calculation.
+    // total_input_tokens / total_output_tokens are session-wide cumulative totals
+    // that persist across /clear and plan mode resets, which would produce absurd
+    // percentages (e.g. 6375%) when used against the (reset) window size.
+    let current_usage = context.current_usage.as_ref()?;
+    let used_tokens = current_usage
+        .input
+        .unwrap_or(0)
+        .saturating_add(current_usage.output.unwrap_or(0))
+        .saturating_add(current_usage.cache_creation_input.unwrap_or(0))
+        .saturating_add(current_usage.cache_read_input.unwrap_or(0));
 
     let used_tokens = u32::try_from(used_tokens).unwrap_or(u32::MAX);
     let window_size = u32::try_from(window_size).unwrap_or(u32::MAX);
@@ -561,6 +558,29 @@ mod tests {
 
         let percent = context_usage_percent(&input).unwrap_or_default();
         assert!((percent - 50.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn context_usage_none_without_current_usage() {
+        // After /clear or plan mode reset, current_usage may be absent while
+        // total_input/output_tokens still carry stale cumulative values.
+        // We must NOT fall back to those totals.
+        let input = StatusInput {
+            _event_name: None,
+            cwd: None,
+            model: None,
+            workspace: None,
+            version: None,
+            cost: None,
+            context_window: Some(ContextWindow {
+                total_input_tokens: Some(500_000),
+                total_output_tokens: Some(200_000),
+                window_size: Some(200_000),
+                current_usage: None,
+            }),
+        };
+
+        assert!(context_usage_percent(&input).is_none());
     }
 
     #[test]

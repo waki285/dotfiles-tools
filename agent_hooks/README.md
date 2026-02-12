@@ -241,6 +241,12 @@ pub fn check_rust_allow_attributes(content: &str) -> RustAllowCheckResult
 // - No trailing slash (e.g., "/etc/nginx"): matches the path and all children
 pub fn check_dangerous_path_command(cmd: &str, dangerous_paths: &[&str]) -> Option<DangerousPathCheck>
 
+// Detect which package manager a command is trying to use
+pub fn detect_package_manager_command(cmd: &str) -> Option<PackageManager>
+
+// Find lock files starting from start_dir and searching up to parent directories
+pub fn find_lock_files(start_dir: &Path) -> Vec<PackageManager>
+
 // Check if a bash command uses a mismatched package manager
 // Searches for lock files starting from start_dir and going up to parent directories
 pub fn check_package_manager(cmd: &str, start_dir: &Path) -> PackageManagerCheckResult
