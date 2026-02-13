@@ -69,17 +69,13 @@ static DESTRUCTIVE_REGEXES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new
 
 #[cfg(windows)]
 static DESTRUCTIVE_REGEXES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
-    [(r"\|\s*(move|move-item)\b", "piped to move/move-item")]
-        .into_iter()
-        .map(|(pattern, desc)| (Regex::new(&format!("(?i){pattern}")).unwrap(), desc))
-        .collect()
+    let pattern = r"\|\s*(move|move-item)\b";
+    let desc = "piped to move/move-item";
+    vec![(Regex::new(&format!("(?i){pattern}")).unwrap(), desc)]
 });
 
 #[cfg(not(windows))]
 static FIND_CHECK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|[;&|()]\s*)find\s").unwrap());
-
-#[cfg(windows)]
-static FIND_CHECK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\|").unwrap());
 
 /// Check if a command is a destructive find command.
 ///
@@ -87,7 +83,15 @@ static FIND_CHECK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\|").unwrap()
 /// or `None` if the command is safe.
 #[must_use]
 pub fn check_destructive_find(cmd: &str) -> Option<&'static str> {
+    #[cfg(not(windows))]
     if !FIND_CHECK.is_match(cmd) {
+        return None;
+    }
+
+    // On Windows, destructive patterns are pipe-based (e.g. `| move`),
+    // so a simple pipe presence check suffices as a fast path.
+    #[cfg(windows)]
+    if !cmd.contains('|') {
         return None;
     }
 

@@ -163,10 +163,9 @@ const fn deny_permission(event: HookEventName, reason: String) -> HookOutput {
 
 fn permission_request_action(c: &Context) {
     let block_rm = c.bool_flag("block-rm");
-    let confirm_destructive_find = c.bool_flag("confirm-destructive-find");
     let dangerous_paths = c.string_flag("dangerous-paths").ok();
 
-    if !block_rm && !confirm_destructive_find && dangerous_paths.is_none() {
+    if !block_rm && dangerous_paths.is_none() {
         return;
     }
 
@@ -211,19 +210,7 @@ fn permission_request_action(c: &Context) {
                     check.command_type, check.matched_path
                 ),
             ));
-            return;
         }
-    }
-
-    // Check for destructive find command
-    if confirm_destructive_find && let Some(description) = check_destructive_find(cmd) {
-        output_hook_result(&ask_permission(
-            HookEventName::PermissionRequest,
-            format!(
-                "Destructive find command detected: {description}. \
-                     This operation may delete or modify files. Please confirm."
-            ),
-        ));
     }
 }
 
@@ -299,8 +286,10 @@ fn build_rust_allow_denial_reason(
 fn pre_tool_use_action(c: &Context) {
     let deny_rust_allow_enabled = c.bool_flag("deny-rust-allow");
     let check_package_manager_enabled = c.bool_flag("check-package-manager");
+    let deny_destructive_find_enabled = c.bool_flag("deny-destructive-find");
 
-    if !deny_rust_allow_enabled && !check_package_manager_enabled {
+    if !deny_rust_allow_enabled && !check_package_manager_enabled && !deny_destructive_find_enabled
+    {
         return;
     }
 
@@ -312,16 +301,32 @@ fn pre_tool_use_action(c: &Context) {
         return;
     };
 
-    // Package manager check for Bash commands
-    if check_package_manager_enabled && matches!(tool_name, ToolName::Bash) {
+    // Bash-specific checks
+    if matches!(tool_name, ToolName::Bash) {
         let cmd = data
             .tool_input
             .as_ref()
             .and_then(|ti| ti.command.as_deref())
             .unwrap_or_default();
 
-        if !cmd.is_empty() && handle_package_manager_check(cmd) {
-            return;
+        if !cmd.is_empty() {
+            // Check for destructive find commands
+            if deny_destructive_find_enabled && let Some(description) = check_destructive_find(cmd)
+            {
+                output_hook_result(&deny_permission(
+                    HookEventName::PreToolUse,
+                    format!(
+                        "Destructive find command detected: {description}. \
+                         This operation may irreversibly delete or modify files."
+                    ),
+                ));
+                return;
+            }
+
+            // Check for package manager mismatch
+            if check_package_manager_enabled && handle_package_manager_check(cmd) {
+                return;
+            }
         }
     }
 
@@ -385,10 +390,6 @@ fn main() {
                         .description("Block rm command and suggest using trash instead"),
                 )
                 .flag(
-                    Flag::new("confirm-destructive-find", FlagType::Bool)
-                        .description("Ask for confirmation on destructive find commands"),
-                )
-                .flag(
                     Flag::new("dangerous-paths", FlagType::String)
                         .description("Comma-separated list of dangerous paths to protect from rm/trash/mv"),
                 )
@@ -414,6 +415,10 @@ fn main() {
                 .flag(
                     Flag::new("check-package-manager", FlagType::Bool)
                         .description("Check for package manager mismatch (e.g., using npm when pnpm-lock.yaml exists)"),
+                )
+                .flag(
+                    Flag::new("deny-destructive-find", FlagType::Bool)
+                        .description("Deny destructive find commands (e.g., find -delete, find -exec rm)"),
                 )
                 .action(pre_tool_use_action),
         );

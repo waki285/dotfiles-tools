@@ -109,6 +109,15 @@ Add to `~/.claude/settings.json`:
             "command": "$HOME/.claude/hooks/agent_hooks_claude pre-tool-use --deny-rust-allow --expect"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/agent_hooks_claude pre-tool-use --check-package-manager --deny-destructive-find"
+          }
+        ]
       }
     ],
     "PermissionRequest": [
@@ -117,7 +126,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/agent_hooks_claude permission-request --block-rm --confirm-destructive-find"
+            "command": "$HOME/.claude/hooks/agent_hooks_claude permission-request --block-rm"
           }
         ]
       }
@@ -133,7 +142,6 @@ Add to `~/.claude/settings.json`:
 | Flag | Description |
 |------|-------------|
 | `--block-rm` | Block `rm` commands and suggest using `trash` instead |
-| `--confirm-destructive-find` | Ask for confirmation on destructive `find` commands |
 | `--dangerous-paths <paths>` | Comma-separated list of dangerous paths to protect. Use trailing slash (e.g., `~/`) to only block exact directory or wildcards. |
 
 ##### `pre-tool-use` command
@@ -144,6 +152,7 @@ Add to `~/.claude/settings.json`:
 | `--expect` | With `--deny-rust-allow`: allow `#[expect(...)]` while denying `#[allow(...)]` |
 | `--additional-context <string>` | With `--deny-rust-allow`: append custom message to the denial reason |
 | `--check-package-manager` | Deny package manager commands that don't match the project's lock file |
+| `--deny-destructive-find` | Deny destructive `find` commands (e.g., `find -delete`, `find -exec rm`) |
 
 #### CLI Examples
 
@@ -151,6 +160,10 @@ Add to `~/.claude/settings.json`:
 # Block rm commands
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | \
   agent_hooks_claude permission-request --block-rm
+
+# Deny destructive find commands
+echo '{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.tmp\" -delete"}}' | \
+  agent_hooks_claude pre-tool-use --deny-destructive-find
 
 # Deny #[allow] in Rust files, allow #[expect]
 echo '{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs","new_string":"#[allow(dead_code)]"}}' | \
