@@ -19,6 +19,7 @@ agent_hooks/
 - **confirm-destructive-find**: Detects destructive `find` commands (e.g., `find -delete`, `find -exec rm`)
 - **dangerous-paths**: Detects rm/trash/mv commands targeting specified dangerous paths
 - **check-package-manager**: Detects package manager mismatches (e.g., using `npm` when `pnpm-lock.yaml` exists)
+- **deny-nul-redirect**: Windows only. Denies redirects to `nul` and enforces `/dev/null` in Bash commands
 
 #### Package Manager Mismatch Detection
 
@@ -153,6 +154,7 @@ Add to `~/.claude/settings.json`:
 | `--additional-context <string>` | With `--deny-rust-allow`: append custom message to the denial reason |
 | `--check-package-manager` | Deny package manager commands that don't match the project's lock file |
 | `--deny-destructive-find` | Deny destructive `find` commands (e.g., `find -delete`, `find -exec rm`) |
+| `--deny-nul-redirect` | Windows only. Deny redirects to `nul` (e.g., `> nul`, `2> nul`, `&> nul`) |
 
 #### CLI Examples
 
@@ -164,6 +166,10 @@ echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | \
 # Deny destructive find commands
 echo '{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.tmp\" -delete"}}' | \
   agent_hooks_claude pre-tool-use --deny-destructive-find
+
+# Windows only: deny redirects to nul and require /dev/null
+echo '{"tool_name":"Bash","tool_input":{"command":"echo test > nul"}}' | \
+  agent_hooks_claude pre-tool-use --deny-nul-redirect
 
 # Deny #[allow] in Rust files, allow #[expect]
 echo '{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs","new_string":"#[allow(dead_code)]"}}' | \
@@ -241,6 +247,9 @@ pub fn is_rm_command(cmd: &str) -> bool
 
 // Check for destructive find commands, returns description if found
 pub fn check_destructive_find(cmd: &str) -> Option<&'static str>
+
+// Check if a command redirects output to nul
+pub fn has_nul_redirect(cmd: &str) -> bool
 
 // Check if a file path is a Rust file
 pub fn is_rust_file(file_path: &str) -> bool

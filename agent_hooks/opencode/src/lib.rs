@@ -6,8 +6,8 @@
 
 use agent_hooks::{
     PackageManagerCheckResult, RustAllowCheckResult, check_dangerous_path_command,
-    check_destructive_find, check_package_manager, check_rust_allow_attributes, is_rm_command,
-    is_rust_file,
+    check_destructive_find, check_package_manager, check_rust_allow_attributes, has_nul_redirect,
+    is_rm_command, is_rust_file,
 };
 use napi_derive::napi;
 
@@ -26,6 +26,15 @@ pub fn is_rm_command_js(cmd: String) -> bool {
 #[napi(js_name = "checkDestructiveFind")]
 pub fn check_destructive_find_js(cmd: String) -> Option<String> {
     check_destructive_find(&cmd).map(String::from)
+}
+
+/// Check if a command redirects output to `nul`.
+///
+/// Returns `true` if the command should be blocked.
+#[napi(js_name = "hasNulRedirect")]
+#[must_use]
+pub fn has_nul_redirect_js(cmd: String) -> bool {
+    has_nul_redirect(&cmd)
 }
 
 /// Check if a file path is a Rust file.

@@ -105,6 +105,32 @@ pub fn check_destructive_find(cmd: &str) -> Option<&'static str> {
 }
 
 // ============================================================================
+// `nul` redirect detection (`> nul`, `2> nul`, `&> nul`) for Windows
+// ============================================================================
+
+#[cfg(windows)]
+static NUL_REDIRECT_PATTERN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:>|2>|&>)\s*nul\b").unwrap());
+
+/// Check if a command redirects output to `nul`.
+///
+/// This check is Windows-only. On non-Windows platforms it always returns `false`.
+#[must_use]
+#[cfg_attr(not(windows), expect(clippy::missing_const_for_fn))]
+pub fn has_nul_redirect(cmd: &str) -> bool {
+    #[cfg(windows)]
+    {
+        return NUL_REDIRECT_PATTERN.is_match(cmd);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = cmd;
+        false
+    }
+}
+
+// ============================================================================
 // Rust #[allow(...)] / #[expect(...)] detection
 // ============================================================================
 

@@ -1,7 +1,7 @@
 use agent_hooks::{
     PackageManagerCheckResult, RustAllowCheckResult, check_dangerous_path_command,
-    check_destructive_find, check_package_manager, check_rust_allow_attributes, is_rm_command,
-    is_rust_file,
+    check_destructive_find, check_package_manager, check_rust_allow_attributes, has_nul_redirect,
+    is_rm_command, is_rust_file,
 };
 use seahorse::{App, Command, Context, Flag, FlagType};
 use serde::{Deserialize, Serialize};
@@ -287,8 +287,12 @@ fn pre_tool_use_action(c: &Context) {
     let deny_rust_allow_enabled = c.bool_flag("deny-rust-allow");
     let check_package_manager_enabled = c.bool_flag("check-package-manager");
     let deny_destructive_find_enabled = c.bool_flag("deny-destructive-find");
+    let deny_nul_redirect_enabled = c.bool_flag("deny-nul-redirect");
 
-    if !deny_rust_allow_enabled && !check_package_manager_enabled && !deny_destructive_find_enabled
+    if !deny_rust_allow_enabled
+        && !check_package_manager_enabled
+        && !deny_destructive_find_enabled
+        && !deny_nul_redirect_enabled
     {
         return;
     }
@@ -310,6 +314,15 @@ fn pre_tool_use_action(c: &Context) {
             .unwrap_or_default();
 
         if !cmd.is_empty() {
+            if deny_nul_redirect_enabled && has_nul_redirect(cmd) {
+                output_hook_result(&deny_permission(
+                    HookEventName::PreToolUse,
+                    "Use /dev/null instead of nul. On Windows bash, '> nul' creates an undeletable file."
+                        .to_string(),
+                ));
+                return;
+            }
+
             // Check for destructive find commands
             if deny_destructive_find_enabled && let Some(description) = check_destructive_find(cmd)
             {
@@ -419,6 +432,12 @@ fn main() {
                 .flag(
                     Flag::new("deny-destructive-find", FlagType::Bool)
                         .description("Deny destructive find commands (e.g., find -delete, find -exec rm)"),
+                )
+                .flag(
+                    Flag::new("deny-nul-redirect", FlagType::Bool)
+                        .description(
+                            "Deny redirects to nul on Windows (e.g., > nul, 2> nul, &> nul)",
+                        ),
                 )
                 .action(pre_tool_use_action),
         );

@@ -106,6 +106,51 @@ fn test_is_rm_command_xargs_with_sudo() {
 }
 
 // -------------------------------------------------------------------------
+// has_nul_redirect tests
+// -------------------------------------------------------------------------
+
+#[cfg(windows)]
+#[test]
+fn test_has_nul_redirect_stdout_windows() {
+    assert!(has_nul_redirect("echo test > nul"));
+    assert!(has_nul_redirect("echo test >NUL"));
+}
+
+#[cfg(windows)]
+#[test]
+fn test_has_nul_redirect_stderr_windows() {
+    assert!(has_nul_redirect("echo test 2> nul"));
+    assert!(has_nul_redirect("echo test 2>NUL"));
+}
+
+#[cfg(windows)]
+#[test]
+fn test_has_nul_redirect_combined_windows() {
+    assert!(has_nul_redirect("echo test &> nul"));
+}
+
+#[test]
+fn test_has_nul_redirect_allows_dev_null() {
+    assert!(!has_nul_redirect("echo test > /dev/null"));
+    assert!(!has_nul_redirect("echo test 2>/dev/null"));
+}
+
+#[test]
+fn test_has_nul_redirect_safe_commands() {
+    assert!(!has_nul_redirect("echo nul"));
+    assert!(!has_nul_redirect("echo test > null"));
+    assert!(!has_nul_redirect("echo test > /tmp/nul"));
+}
+
+#[cfg(not(windows))]
+#[test]
+fn test_has_nul_redirect_noop_on_non_windows() {
+    assert!(!has_nul_redirect("echo test > nul"));
+    assert!(!has_nul_redirect("echo test 2> nul"));
+    assert!(!has_nul_redirect("echo test &> nul"));
+}
+
+// -------------------------------------------------------------------------
 // check_destructive_find tests (Unix only)
 // -------------------------------------------------------------------------
 
