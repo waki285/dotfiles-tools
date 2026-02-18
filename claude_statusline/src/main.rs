@@ -419,6 +419,13 @@ fn context_usage_percent(input: &StatusInput) -> Option<f64> {
         .saturating_add(current_usage.cache_creation_input.unwrap_or(0))
         .saturating_add(current_usage.cache_read_input.unwrap_or(0));
 
+    // During early streaming, Claude Code may send current_usage with all
+    // token counts at zero. Treat this the same as absent to avoid briefly
+    // flashing "0.0%" in the statusline.
+    if used_tokens == 0 {
+        return None;
+    }
+
     let used_tokens = u32::try_from(used_tokens).unwrap_or(u32::MAX);
     let window_size = u32::try_from(window_size).unwrap_or(u32::MAX);
 
@@ -577,6 +584,34 @@ mod tests {
                 total_output_tokens: Some(200_000),
                 window_size: Some(200_000),
                 current_usage: None,
+            }),
+        };
+
+        assert!(context_usage_percent(&input).is_none());
+    }
+
+    #[test]
+    fn context_usage_none_when_all_tokens_zero() {
+        // During early streaming, current_usage may be present but all
+        // token counts are zero. This should be treated as absent to
+        // avoid briefly flashing "0.0%".
+        let input = StatusInput {
+            _event_name: None,
+            cwd: None,
+            model: None,
+            workspace: None,
+            version: None,
+            cost: None,
+            context_window: Some(ContextWindow {
+                total_input_tokens: None,
+                total_output_tokens: None,
+                window_size: Some(200_000),
+                current_usage: Some(CurrentUsage {
+                    input: Some(0),
+                    output: Some(0),
+                    cache_creation_input: Some(0),
+                    cache_read_input: Some(0),
+                }),
             }),
         };
 
