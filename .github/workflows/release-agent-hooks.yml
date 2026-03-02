@@ -94,7 +94,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/agent_hooks_claude.exe" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}
@@ -178,7 +178,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/agent_hooks_copilot.exe" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}
@@ -259,7 +259,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.lib_name }}" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}
@@ -291,7 +291,7 @@ jobs:
           fi
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
