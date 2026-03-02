@@ -94,7 +94,7 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/claude_statusline.exe" "dist/${{ matrix.name }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}
@@ -126,7 +126,7 @@ jobs:
           fi
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
