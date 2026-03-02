@@ -1,9 +1,9 @@
 [package]
 name = "agent_hooks_opencode"
-version = "0.5.2"
-edition = "2024"
+version = "0.6.0"
+edition.workspace = true
 description = "agent_hooks NAPI bindings for OpenCode"
-license = "Apache-2.0"
+license.workspace = true
 publish = false
 
 [lib]

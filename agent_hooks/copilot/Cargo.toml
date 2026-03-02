@@ -1,13 +1,13 @@
 [package]
-name = "agent_hooks_claude"
+name = "agent_hooks_copilot"
 version = "0.6.0"
 edition.workspace = true
-description = "agent_hooks CLI for Claude Code"
+description = "agent_hooks CLI for GitHub Copilot CLI"
 license.workspace = true
 publish = false
 
 [[bin]]
-name = "agent_hooks_claude"
+name = "agent_hooks_copilot"
 path = "src/main.rs"
 
 [dependencies]

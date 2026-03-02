@@ -1,9 +1,9 @@
 [package]
 name = "claude_statusline"
 version = "0.1.8"
-edition = "2024"
+edition.workspace = true
 description = "Powerline-style statusline renderer for Claude Status hook"
-license = "Apache-2.0"
+license.workspace = true
 publish = false
 
 [dependencies]

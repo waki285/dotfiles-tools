@@ -8,6 +8,7 @@ A Rust-based hook system for AI coding agents that provides safety checks and re
 agent_hooks/
 ├── core/           # Core library - pure check functions
 ├── claude/         # Claude Code CLI (agent_hooks_claude)
+├── copilot/        # Copilot CLI (agent_hooks_copilot)
 └── opencode/       # OpenCode NAPI bindings (agent_hooks_opencode)
 ```
 
@@ -16,7 +17,7 @@ agent_hooks/
 ### Bash Command Checks
 
 - **block-rm**: Blocks `rm` commands and suggests using `trash` instead
-- **confirm-destructive-find**: Detects destructive `find` commands (e.g., `find -delete`, `find -exec rm`)
+- **deny-destructive-find**: Denies destructive `find` commands (e.g., `find -delete`, `find -exec rm`)
 - **dangerous-paths**: Detects rm/trash/mv commands targeting specified dangerous paths
 - **check-package-manager**: Detects package manager mismatches (e.g., using `npm` when `pnpm-lock.yaml` exists)
 - **deny-nul-redirect**: Windows only. Denies redirects to `nul` and enforces `/dev/null` in Bash commands
@@ -80,6 +81,16 @@ curl -fsSL -o ~/.claude/hooks/agent_hooks_claude \
   https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_claude-<platform>
 
 chmod +x ~/.claude/hooks/agent_hooks_claude
+```
+
+#### Copilot CLI
+
+```bash
+# Download the binary for your platform
+curl -fsSL -o ~/.local/bin/agent_hooks_copilot \
+  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_copilot-<platform>
+
+chmod +x ~/.local/bin/agent_hooks_copilot
 ```
 
 #### OpenCode Plugin
@@ -176,6 +187,57 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs","new_string":"
   agent_hooks_claude pre-tool-use --deny-rust-allow --expect
 ```
 
+### Copilot CLI
+
+#### Configuration
+
+Create `.github/hooks/agent-hooks.json` in your repository:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "agent_hooks_copilot pre-tool-use --block-rm --deny-destructive-find --check-package-manager --deny-rust-allow --expect"
+      }
+    ]
+  }
+}
+```
+
+#### CLI Flags
+
+##### `pre-tool-use` command
+
+| Flag | Description |
+|------|-------------|
+| `--block-rm` | Block `rm` commands and suggest using `trash` instead |
+| `--dangerous-paths <paths>` | Comma-separated list of dangerous paths to protect from rm/trash/mv |
+| `--deny-rust-allow` | Deny `#[allow(...)]` attributes in Rust files |
+| `--expect` | With `--deny-rust-allow`: allow `#[expect(...)]` while denying `#[allow(...)]` |
+| `--additional-context <string>` | With `--deny-rust-allow`: append custom message to the denial reason |
+| `--check-package-manager` | Deny package manager commands that don't match the project's lock file |
+| `--deny-destructive-find` | Deny destructive `find` commands (e.g., `find -delete`, `find -exec rm`) |
+| `--deny-nul-redirect` | Windows only. Deny redirects to `nul` (e.g., `> nul`, `2> nul`, `&> nul`) |
+
+#### CLI Examples
+
+```bash
+# Block rm in Copilot preToolUse input
+echo '{"toolName":"bash","toolArgs":"{\"command\":\"rm -rf /tmp/test\"}"}' | \
+  agent_hooks_copilot pre-tool-use --block-rm
+
+# Deny destructive find in Copilot preToolUse input
+echo '{"toolName":"bash","toolArgs":"{\"command\":\"find . -name \\\"*.tmp\\\" -delete\"}"}' | \
+  agent_hooks_copilot pre-tool-use --deny-destructive-find
+
+# Deny #[allow] in Rust edits for Copilot preToolUse input
+echo '{"toolName":"edit","toolArgs":"{\"filePath\":\"src/main.rs\",\"content\":\"#[allow(dead_code)]\"}"}' | \
+  agent_hooks_copilot pre-tool-use --deny-rust-allow --expect
+```
+
 ### OpenCode
 
 #### Configuration
@@ -225,6 +287,17 @@ The plugin automatically:
 | Windows | arm64 | `agent_hooks_claude-windows-arm64.exe` |
 
 Linux binaries are statically linked with musl, and Windows binaries are statically linked with CRT for maximum compatibility.
+
+### Copilot CLI
+
+| Platform | Architecture | Binary Name |
+|----------|--------------|-------------|
+| macOS | x86_64 | `agent_hooks_copilot-macos-x86_64` |
+| macOS | arm64 | `agent_hooks_copilot-macos-arm64` |
+| Linux | x86_64 | `agent_hooks_copilot-linux-x86_64` |
+| Linux | arm64 | `agent_hooks_copilot-linux-arm64` |
+| Windows | x86_64 | `agent_hooks_copilot-windows-x86_64.exe` |
+| Windows | arm64 | `agent_hooks_copilot-windows-arm64.exe` |
 
 ### OpenCode NAPI
 
@@ -284,6 +357,9 @@ cargo build --release
 
 # Build Claude CLI only
 cargo build -p agent_hooks_claude --release
+
+# Build Copilot CLI only
+cargo build -p agent_hooks_copilot --release
 
 # Build OpenCode NAPI only
 cargo build -p agent_hooks_opencode --release

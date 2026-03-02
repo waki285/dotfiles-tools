@@ -40,7 +40,7 @@ jobs:
           shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo check
-        run: cargo check --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo check --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_copilot -p agent_hooks_opencode
 
   fmt:
     name: Format
@@ -55,7 +55,7 @@ jobs:
           components: rustfmt
 
       - name: Run cargo fmt
-        run: cargo fmt -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode -- --check
+        run: cargo fmt -p agent_hooks -p agent_hooks_claude -p agent_hooks_copilot -p agent_hooks_opencode -- --check
 
   clippy:
     name: Clippy
@@ -76,7 +76,7 @@ jobs:
           shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo clippy
-        run: cargo clippy --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode -- -D warnings
+        run: cargo clippy --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_copilot -p agent_hooks_opencode -- -D warnings
 
   test:
     name: Test
@@ -98,7 +98,7 @@ jobs:
           shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo test
-        run: cargo test --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo test --all-targets -p agent_hooks -p agent_hooks_claude -p agent_hooks_copilot -p agent_hooks_opencode
 
   build:
     name: Build
@@ -120,4 +120,4 @@ jobs:
           shared-key: rust-ci-workspace-${{ runner.os }}
 
       - name: Run cargo build
-        run: cargo build --release -p agent_hooks -p agent_hooks_claude -p agent_hooks_opencode
+        run: cargo build --release -p agent_hooks -p agent_hooks_claude -p agent_hooks_copilot -p agent_hooks_opencode

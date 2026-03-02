@@ -99,6 +99,90 @@ jobs:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}
 
+  build-copilot:
+    name: Build Copilot CLI
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: agent_hooks_copilot-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: agent_hooks_copilot-macos-arm64
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: agent_hooks_copilot-linux-x86_64
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: agent_hooks_copilot-linux-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: agent_hooks_copilot-windows-x86_64.exe
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            name: agent_hooks_copilot-windows-arm64.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: ${{ matrix.target }}-copilot
+
+      - name: Install musl tools (Linux x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Install cross (Linux ARM64 musl)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build release binary (Unix)
+        if: runner.os != 'Windows' && matrix.target != 'aarch64-unknown-linux-musl'
+        run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_copilot
+
+      - name: Build release binary (Linux ARM64 musl with cross)
+        if: matrix.target == 'aarch64-unknown-linux-musl'
+        run: cross build --release --target ${{ matrix.target }} -p agent_hooks_copilot
+
+      - name: Build release binary (Windows)
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build --release --target ${{ matrix.target }} -p agent_hooks_copilot
+
+      - name: Prepare artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/agent_hooks_copilot dist/${{ matrix.name }}
+          chmod +x dist/${{ matrix.name }}
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "target/${{ matrix.target }}/release/agent_hooks_copilot.exe" "dist/${{ matrix.name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}
+
   build-opencode:
     name: Build OpenCode NAPI
     strategy:
@@ -181,7 +265,7 @@ jobs:
           path: dist/${{ matrix.name }}
 
   release:
-    needs: [build-claude, build-opencode]
+    needs: [build-claude, build-copilot, build-opencode]
     runs-on: ubuntu-latest
 
     steps:
@@ -243,6 +327,14 @@ jobs:
             - `agent_hooks_claude-windows-x86_64.exe` - Windows on x86_64 (static)
             - `agent_hooks_claude-windows-arm64.exe` - Windows on ARM64 (static)
 
+            ### Copilot CLI Binaries
+            - `agent_hooks_copilot-macos-x86_64` - macOS on Intel (x86_64)
+            - `agent_hooks_copilot-macos-arm64` - macOS on Apple Silicon (arm64)
+            - `agent_hooks_copilot-linux-x86_64` - Linux on x86_64 (musl, static)
+            - `agent_hooks_copilot-linux-arm64` - Linux on ARM64 (musl, static)
+            - `agent_hooks_copilot-windows-x86_64.exe` - Windows on x86_64 (static)
+            - `agent_hooks_copilot-windows-arm64.exe` - Windows on ARM64 (static)
+
             ### OpenCode NAPI Binaries (.node)
             - `agent_hooks_opencode-macos-x86_64.node` - macOS on Intel (x86_64)
             - `agent_hooks_opencode-macos-arm64.node` - macOS on Apple Silicon (arm64)
@@ -254,10 +346,16 @@ jobs:
             ### Usage (Claude CLI)
             ```bash
             # permission-request: Handle Bash command permission checks
-            agent_hooks_claude permission-request --block-rm --confirm-destructive-find
+            agent_hooks_claude permission-request --block-rm
 
             # pre-tool-use: Handle Edit/Write tool checks
-            agent_hooks_claude pre-tool-use --deny-rust-allow --expect
+            agent_hooks_claude pre-tool-use --deny-rust-allow --expect --deny-destructive-find
+            ```
+
+            ### Usage (Copilot CLI)
+            ```bash
+            # pre-tool-use: Handle Bash/Edit/Write checks for Copilot hooks
+            agent_hooks_copilot pre-tool-use --block-rm --deny-destructive-find --deny-rust-allow --expect
             ```
 
             ### Verification

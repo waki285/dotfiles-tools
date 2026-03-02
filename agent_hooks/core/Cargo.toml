@@ -1,9 +1,9 @@
 [package]
 name = "agent_hooks"
-version = "0.5.2"
-edition = "2024"
+version = "0.6.0"
+edition.workspace = true
 description = "A hook system for AI coding agents"
-license = "Apache-2.0"
+license.workspace = true
 repository = "https://github.com/waki285/dotfiles"
 
 [dependencies]

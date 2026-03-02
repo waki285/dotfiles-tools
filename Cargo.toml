@@ -2,10 +2,15 @@
 members = [
     "agent_hooks/core",
     "agent_hooks/claude",
+    "agent_hooks/copilot",
     "agent_hooks/opencode",
     "claude_statusline",
 ]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
