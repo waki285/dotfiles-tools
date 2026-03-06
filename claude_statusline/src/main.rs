@@ -67,6 +67,18 @@ struct Segment {
     bg: Color,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum QualifierKind {
+    Bracket,
+    Paren,
+}
+
+#[derive(Debug)]
+struct ModelQualifier {
+    display: String,
+    kind: QualifierKind,
+}
+
 const POWERLINE_ARROW: char = '\u{e0b0}';
 const CONTEXT_BAR_SLOTS: usize = 10;
 const CONTEXT_BAR_FILLED: char = '█';
@@ -178,16 +190,17 @@ fn build_statusline(input: &StatusInput) -> String {
 ///
 /// Examples:
 ///   `ag/claude-opus-4-6-thinking`      -> `Opus 4.6 🧠`
-///   `ag/claude-opus-4-6-thinking[1m]`  -> `Opus 4.6 (1M) 🧠`
+///   `ag/claude-opus-4-6-thinking[1m]`  -> `Opus 4.6 [1M] 🧠`
 ///   `ag/claude-sonnet-4-5-thinking`    -> `Sonnet 4.5 🧠`
-///   `ag/gemini-2.5-flash-lite[1m]`     -> `Gemini 2.5 Flash Lite (1M)`
+///   `ag/gemini-2.5-flash-lite[1m]`     -> `Gemini 2.5 Flash Lite [1M]`
 ///   `ag/gemini-2.5-pro`                -> `Gemini 2.5 Pro 🧠`
 ///   `claude-opus-4.5`                  -> `Opus 4.5`
-///   `v/gpt-5.3-codex(xhigh)`          -> `GPT 5.3 Codex (xhigh) 🧠`
-///   `gpt-4.1-2025-04-14`              -> `GPT 4.1`
+///   `v/gpt-5.3-codex(xhigh)`          -> `GPT-5.3-Codex (xhigh) 🧠`
+///   `gpt-5.4(xhigh)[1m]`              -> `GPT-5.4 (xhigh) [1M] 🧠`
+///   `gpt-4.1-2025-04-14`              -> `GPT-4.1`
 ///   `unknown-model`                    -> `unknown-model`
 fn prettify_model_name(raw: &str) -> String {
-    let (body, qualifier) = extract_qualifier(raw);
+    let (body, qualifiers) = extract_qualifiers(raw);
 
     // Strip routing prefixes: "ag/", "v/"
     let body = body
@@ -205,16 +218,20 @@ fn prettify_model_name(raw: &str) -> String {
         let is_pro = parts.iter().any(|p| p.eq_ignore_ascii_case("pro"));
         (prettify_generic("Gemini", rest), is_pro)
     } else if let Some(rest) = body.strip_prefix("gpt-") {
-        let reasoning = is_gpt_reasoning(rest, qualifier.as_deref());
-        (prettify_generic("GPT", rest), reasoning)
+        let reasoning = is_gpt_reasoning(rest, &qualifiers);
+        (prettify_gpt(rest), reasoning)
     } else {
         return raw.to_string();
     };
 
-    let mut result = match qualifier {
-        Some(q) => format!("{pretty} ({q})"),
-        None => pretty,
-    };
+    let mut result = pretty;
+    for qualifier in &qualifiers {
+        match qualifier.kind {
+            QualifierKind::Bracket => write!(result, " [{}]", qualifier.display),
+            QualifierKind::Paren => write!(result, " ({})", qualifier.display),
+        }
+        .expect("writing into String must succeed");
+    }
 
     if is_reasoning {
         result.push_str(" 🧠");
@@ -226,23 +243,30 @@ fn prettify_model_name(raw: &str) -> String {
 /// Determine if a GPT model qualifies as a reasoning model.
 ///
 /// Rules:
-/// - GPT Codex (non-mini) with medium+ reasoning qualifier -> true
-/// - GPT 5+ (non-mini) -> true
-fn is_gpt_reasoning(rest: &str, qualifier: Option<&str>) -> bool {
+/// - GPT Codex variants with medium+ reasoning qualifier -> true
+/// - GPT mini / nano variants without codex -> false
+/// - Other GPT 5+ variants -> true
+fn is_gpt_reasoning(rest: &str, qualifiers: &[ModelQualifier]) -> bool {
     let parts: Vec<&str> = rest.split('-').collect();
-    if parts.iter().any(|p| p.eq_ignore_ascii_case("mini")) {
-        return false;
-    }
-
     let is_codex = parts.iter().any(|p| p.eq_ignore_ascii_case("codex"));
     if is_codex {
-        return qualifier.is_some_and(|q| {
-            let q_lower = q.to_ascii_lowercase();
-            q_lower == "medium" || q_lower == "high" || q_lower == "xhigh"
+        return qualifiers.iter().any(|qualifier| {
+            qualifier.kind == QualifierKind::Paren
+                && matches!(
+                    qualifier.display.to_ascii_lowercase().as_str(),
+                    "medium" | "high" | "xhigh"
+                )
         });
     }
 
-    // GPT 5+ (non-mini)
+    if parts
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case("mini") || p.eq_ignore_ascii_case("nano"))
+    {
+        return false;
+    }
+
+    // GPT 5+ (excluding mini / nano)
     parts
         .first()
         .and_then(|v| v.split('.').next())
@@ -250,23 +274,40 @@ fn is_gpt_reasoning(rest: &str, qualifier: Option<&str>) -> bool {
         .is_some_and(|major| major >= 5)
 }
 
-/// Extract a trailing qualifier from a model ID.
-/// Handles both `[...]` and `(...)` syntax.
-/// Returns `(body, Some(inner))` or `(original, None)`.
-fn extract_qualifier(raw: &str) -> (&str, Option<String>) {
-    if let Some(start) = raw.rfind('[')
-        && raw.ends_with(']')
-    {
-        let inner = &raw[start + 1..raw.len() - 1];
-        return (&raw[..start], Some(inner.to_uppercase()));
+/// Extract trailing qualifiers from a model ID.
+/// Handles stacked `(...)` and `[...]` suffixes, preserving the original order.
+fn extract_qualifiers(raw: &str) -> (&str, Vec<ModelQualifier>) {
+    let mut body = raw;
+    let mut qualifiers = Vec::new();
+
+    loop {
+        if let Some(start) = body.rfind('[')
+            && body.ends_with(']')
+        {
+            let inner = &body[start + 1..body.len() - 1];
+            qualifiers.push(ModelQualifier {
+                display: inner.to_uppercase(),
+                kind: QualifierKind::Bracket,
+            });
+            body = &body[..start];
+            continue;
+        }
+
+        if let Some(start) = body.rfind('(')
+            && body.ends_with(')')
+        {
+            let inner = &body[start + 1..body.len() - 1];
+            qualifiers.push(ModelQualifier {
+                display: inner.to_string(),
+                kind: QualifierKind::Paren,
+            });
+            body = &body[..start];
+            continue;
+        }
+
+        qualifiers.reverse();
+        return (body, qualifiers);
     }
-    if let Some(start) = raw.rfind('(')
-        && raw.ends_with(')')
-    {
-        let inner = &raw[start + 1..raw.len() - 1];
-        return (&raw[..start], Some(inner.to_string()));
-    }
-    (raw, None)
 }
 
 /// Prettify a Claude model name after "claude-" prefix is stripped.
@@ -282,10 +323,8 @@ fn prettify_claude(rest: &str) -> String {
     format!("{tier} {version}")
 }
 
-/// Prettify a non-Claude model (Gemini, GPT) after the prefix is stripped.
-/// e.g. brand="GPT", rest="5.3-codex" -> "GPT 5.3 Codex"
+/// Prettify a non-Claude, non-GPT model after the prefix is stripped.
 /// e.g. brand="Gemini", rest="2.5-flash-lite" -> "Gemini 2.5 Flash Lite"
-/// e.g. brand="GPT", rest="4.1-2025-04-14" -> "GPT 4.1"
 fn prettify_generic(brand: &str, rest: &str) -> String {
     let (version, name_parts) = split_version_and_name(rest);
     if name_parts.is_empty() {
@@ -298,6 +337,45 @@ fn prettify_generic(brand: &str, rest: &str) -> String {
             .join(" ");
         format!("{brand} {version} {name}")
     }
+}
+
+/// Prettify a GPT model after the `gpt-` prefix is stripped.
+///
+/// Rules:
+/// - Always keep the `GPT-<version>` prefix.
+/// - `codex` families stay hyphenated and Title Cased.
+/// - `mini` / `nano` families stay lowercase and use a space separator.
+fn prettify_gpt(rest: &str) -> String {
+    let (version, name_parts) = split_version_and_name(rest);
+    let mut result = format!("GPT-{version}");
+    if name_parts.is_empty() {
+        return result;
+    }
+
+    if name_parts[0].eq_ignore_ascii_case("codex") {
+        result.push('-');
+        result.push_str(
+            &name_parts
+                .iter()
+                .map(|part| title_case(part))
+                .collect::<Vec<_>>()
+                .join("-"),
+        );
+        return result;
+    }
+
+    result.push(' ');
+    result.push_str(
+        &name_parts
+            .iter()
+            .map(|part| match part.to_ascii_lowercase().as_str() {
+                "mini" | "nano" => part.to_ascii_lowercase(),
+                _ => title_case(part),
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    result
 }
 
 /// Split version and name segments from a model suffix.
@@ -676,7 +754,7 @@ mod tests {
     fn prettify_claude_opus_with_context() {
         assert_eq!(
             prettify_model_name("ag/claude-opus-4-6-thinking[1m]"),
-            "Opus 4.6 (1M) 🧠"
+            "Opus 4.6 [1M] 🧠"
         );
     }
 
@@ -706,7 +784,7 @@ mod tests {
     fn prettify_gemini_flash_is_not_reasoning() {
         assert_eq!(
             prettify_model_name("ag/gemini-2.5-flash-lite[1m]"),
-            "Gemini 2.5 Flash Lite (1M)"
+            "Gemini 2.5 Flash Lite [1M]"
         );
     }
 
@@ -714,15 +792,23 @@ mod tests {
     fn prettify_gpt_codex_with_reasoning() {
         assert_eq!(
             prettify_model_name("v/gpt-5.3-codex(xhigh)"),
-            "GPT 5.3 Codex (xhigh) 🧠"
+            "GPT-5.3-Codex (xhigh) 🧠"
         );
         assert_eq!(
             prettify_model_name("gpt-5.3-codex(high)"),
-            "GPT 5.3 Codex (high) 🧠"
+            "GPT-5.3-Codex (high) 🧠"
         );
         assert_eq!(
             prettify_model_name("gpt-5.3-codex(medium)"),
-            "GPT 5.3 Codex (medium) 🧠"
+            "GPT-5.3-Codex (medium) 🧠"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.3-codex(xhigh)[1m]"),
+            "GPT-5.3-Codex (xhigh) [1M] 🧠"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.1-codex-max"),
+            "GPT-5.1-Codex-Max"
         );
     }
 
@@ -730,32 +816,41 @@ mod tests {
     fn prettify_gpt_codex_low_reasoning_is_not_thinking() {
         assert_eq!(
             prettify_model_name("gpt-5.3-codex(low)"),
-            "GPT 5.3 Codex (low)"
+            "GPT-5.3-Codex (low)"
         );
     }
 
     #[test]
-    fn prettify_gpt_codex_mini_is_not_reasoning() {
+    fn prettify_gpt_codex_mini_with_reasoning_is_thinking() {
         assert_eq!(
             prettify_model_name("gpt-5.3-codex-mini(high)"),
-            "GPT 5.3 Codex Mini (high)"
+            "GPT-5.3-Codex-Mini (high) 🧠"
         );
     }
 
     #[test]
     fn prettify_gpt5_is_reasoning() {
-        assert_eq!(prettify_model_name("gpt-5"), "GPT 5 🧠");
-        assert_eq!(prettify_model_name("gpt-5.1"), "GPT 5.1 🧠");
+        assert_eq!(prettify_model_name("gpt-5"), "GPT-5 🧠");
+        assert_eq!(prettify_model_name("gpt-5.1"), "GPT-5.1 🧠");
+        assert_eq!(
+            prettify_model_name("gpt-5.4(xhigh)[1m]"),
+            "GPT-5.4 (xhigh) [1M] 🧠"
+        );
     }
 
     #[test]
     fn prettify_gpt4_is_not_reasoning() {
-        assert_eq!(prettify_model_name("gpt-4.1-2025-04-14"), "GPT 4.1");
+        assert_eq!(prettify_model_name("gpt-4.1-2025-04-14"), "GPT-4.1");
     }
 
     #[test]
     fn prettify_gpt5_mini_is_not_reasoning() {
-        assert_eq!(prettify_model_name("gpt-5-mini"), "GPT 5 Mini");
+        assert_eq!(prettify_model_name("gpt-5-mini"), "GPT-5 mini");
+    }
+
+    #[test]
+    fn prettify_gpt5_nano_keeps_lowercase_suffix() {
+        assert_eq!(prettify_model_name("gpt-5-nano"), "GPT-5 nano");
     }
 
     #[test]
