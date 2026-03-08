@@ -197,10 +197,11 @@ fn build_statusline(input: &StatusInput) -> String {
 ///   `claude-opus-4.5`                  -> `Opus 4.5`
 ///   `v/gpt-5.3-codex(xhigh)`          -> `GPT-5.3-Codex (xhigh) 🧠`
 ///   `gpt-5.4(xhigh)[1m]`              -> `GPT-5.4 (xhigh) [1M] 🧠`
+///   `gpt-5.4(xhigh)[1m]+fast`         -> `GPT-5.4 (xhigh) [1M] 🧠⚡️`
 ///   `gpt-4.1-2025-04-14`              -> `GPT-4.1`
 ///   `unknown-model`                    -> `unknown-model`
 fn prettify_model_name(raw: &str) -> String {
-    let (body, qualifiers) = extract_qualifiers(raw);
+    let (body, qualifiers, is_fast) = extract_qualifiers(raw);
 
     // Strip routing prefixes: "ag/", "v/"
     let body = body
@@ -235,6 +236,14 @@ fn prettify_model_name(raw: &str) -> String {
 
     if is_reasoning {
         result.push_str(" 🧠");
+    }
+
+    if is_fast {
+        if is_reasoning {
+            result.push_str("⚡️");
+        } else {
+            result.push_str(" ⚡️");
+        }
     }
 
     result
@@ -276,9 +285,16 @@ fn is_gpt_reasoning(rest: &str, qualifiers: &[ModelQualifier]) -> bool {
 
 /// Extract trailing qualifiers from a model ID.
 /// Handles stacked `(...)` and `[...]` suffixes, preserving the original order.
-fn extract_qualifiers(raw: &str) -> (&str, Vec<ModelQualifier>) {
+/// Also recognizes a trailing `+fast` flag.
+fn extract_qualifiers(raw: &str) -> (&str, Vec<ModelQualifier>, bool) {
     let mut body = raw;
     let mut qualifiers = Vec::new();
+    let mut is_fast = false;
+
+    if let Some(stripped) = body.strip_suffix("+fast") {
+        is_fast = true;
+        body = stripped;
+    }
 
     loop {
         if let Some(start) = body.rfind('[')
@@ -306,7 +322,7 @@ fn extract_qualifiers(raw: &str) -> (&str, Vec<ModelQualifier>) {
         }
 
         qualifiers.reverse();
-        return (body, qualifiers);
+        return (body, qualifiers, is_fast);
     }
 }
 
@@ -836,6 +852,15 @@ mod tests {
             prettify_model_name("gpt-5.4(xhigh)[1m]"),
             "GPT-5.4 (xhigh) [1M] 🧠"
         );
+    }
+
+    #[test]
+    fn prettify_gpt5_fast_adds_lightning() {
+        assert_eq!(
+            prettify_model_name("gpt-5.4(xhigh)[1m]+fast"),
+            "GPT-5.4 (xhigh) [1M] 🧠⚡️"
+        );
+        assert_eq!(prettify_model_name("gpt-4.1+fast"), "GPT-4.1 ⚡️");
     }
 
     #[test]
