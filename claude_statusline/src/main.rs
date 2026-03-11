@@ -284,19 +284,20 @@ fn is_gpt_reasoning(rest: &str, qualifiers: &[ModelQualifier]) -> bool {
 }
 
 /// Extract trailing qualifiers from a model ID.
-/// Handles stacked `(...)` and `[...]` suffixes, preserving the original order.
-/// Also recognizes a trailing `+fast` flag.
+/// Handles stacked `(...)`, `[...]`, and `+fast` suffixes in any order,
+/// preserving the original order for displayed qualifiers.
 fn extract_qualifiers(raw: &str) -> (&str, Vec<ModelQualifier>, bool) {
     let mut body = raw;
     let mut qualifiers = Vec::new();
     let mut is_fast = false;
 
-    if let Some(stripped) = body.strip_suffix("+fast") {
-        is_fast = true;
-        body = stripped;
-    }
-
     loop {
+        if let Some(stripped) = body.strip_suffix("+fast") {
+            is_fast = true;
+            body = stripped;
+            continue;
+        }
+
         if let Some(start) = body.rfind('[')
             && body.ends_with(']')
         {
@@ -858,6 +859,14 @@ mod tests {
     fn prettify_gpt5_fast_adds_lightning() {
         assert_eq!(
             prettify_model_name("gpt-5.4(xhigh)[1m]+fast"),
+            "GPT-5.4 (xhigh) [1M] 🧠⚡️"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.4(xhigh)+fast[1m]"),
+            "GPT-5.4 (xhigh) [1M] 🧠⚡️"
+        );
+        assert_eq!(
+            prettify_model_name("gpt-5.4+fast(xhigh)[1m]"),
             "GPT-5.4 (xhigh) [1M] 🧠⚡️"
         );
         assert_eq!(prettify_model_name("gpt-4.1+fast"), "GPT-4.1 ⚡️");
