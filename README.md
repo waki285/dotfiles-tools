@@ -6,7 +6,7 @@ Development tools for [waki285/dotfiles](https://github.com/waki285/dotfiles).
 
 | Directory | Description | Language |
 |-----------|-------------|----------|
-| [agent_hooks](agent_hooks/) | Hook system for AI coding agents (Claude Code, Copilot CLI, OpenCode) | Rust |
+| [agent_hooks](agent_hooks/) | Hook system for AI coding agents (Claude Code, Codex, Copilot CLI, OpenCode) | Rust |
 | [claude_statusline](claude_statusline/) | Claude Status hook renderer with powerline-style ANSI output | Rust |
 | [permissions-gen](permissions-gen/) | Tool permission generator from centralized YAML | Go |
 
@@ -17,8 +17,7 @@ This repository is organized as a Cargo workspace rooted at `tools/Cargo.toml`.
 Workspace members:
 
 - `agent_hooks/core`
-- `agent_hooks/claude`
-- `agent_hooks/copilot`
+- `agent_hooks/cli`
 - `agent_hooks/opencode`
 - `claude_statusline`
 

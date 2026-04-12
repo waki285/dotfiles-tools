@@ -120,7 +120,7 @@ static NUL_REDIRECT_PATTERN: LazyLock<Regex> =
 pub fn has_nul_redirect(cmd: &str) -> bool {
     #[cfg(windows)]
     {
-        return NUL_REDIRECT_PATTERN.is_match(cmd);
+        NUL_REDIRECT_PATTERN.is_match(cmd)
     }
 
     #[cfg(not(windows))]

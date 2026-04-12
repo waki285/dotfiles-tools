@@ -1,8 +1,7 @@
 [workspace]
 members = [
     "agent_hooks/core",
-    "agent_hooks/claude",
-    "agent_hooks/copilot",
+    "agent_hooks/cli",
     "agent_hooks/opencode",
     "claude_statusline",
 ]

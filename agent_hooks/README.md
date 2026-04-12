@@ -1,102 +1,51 @@
 # agent_hooks
 
-A Rust-based hook system for AI coding agents that provides safety checks and restrictions.
+A Rust-based hook system for AI coding agents that provides safety checks and restrictions across Claude Code, Codex, GitHub Copilot CLI, and OpenCode.
 
 ## Architecture
 
-```
+```text
 agent_hooks/
 ├── core/           # Core library - pure check functions
-├── claude/         # Claude Code CLI (agent_hooks_claude)
-├── copilot/        # Copilot CLI (agent_hooks_copilot)
+├── cli/            # Unified CLI (`agent_hooks`) for Claude/Codex/Copilot
 └── opencode/       # OpenCode NAPI bindings (agent_hooks_opencode)
 ```
 
 ## Features
 
-### Bash Command Checks
+### Bash command checks
 
-- **block-rm**: Blocks `rm` commands and suggests using `trash` instead
-- **deny-destructive-find**: Denies destructive `find` commands (e.g., `find -delete`, `find -exec rm`)
-- **dangerous-paths**: Detects rm/trash/mv commands targeting specified dangerous paths
-- **check-package-manager**: Detects package manager mismatches (e.g., using `npm` when `pnpm-lock.yaml` exists)
-- **deny-nul-redirect**: Windows only. Denies redirects to `nul` and enforces `/dev/null` in Bash commands
+- `block-rm`: Blocks `rm` commands and suggests `trash` instead
+- `deny-destructive-find`: Denies destructive `find` commands such as `find -delete`
+- `dangerous-paths`: Detects `rm`/`trash`/`mv` commands targeting configured paths
+- `check-package-manager`: Detects package manager mismatches such as `npm` in a `pnpm-lock.yaml` repo
+- `deny-nul-redirect`: Windows only. Denies redirects to `nul` and enforces `/dev/null`
 
-#### Package Manager Mismatch Detection
+### Rust edit checks
 
-The `check-package-manager` option detects when a command uses a different package manager than the project's lock file indicates:
-
-| Lock File | Expected Package Manager |
-|-----------|--------------------------|
-| `package-lock.json` | npm |
-| `pnpm-lock.yaml` | pnpm |
-| `yarn.lock` | yarn |
-| `bun.lockb` / `bun.lock` | bun |
-
-**Behavior:**
-
-- **Single lock file**: Denies commands using a different package manager
-- **Multiple lock files**: Does not intervene (to avoid false positives in migration scenarios)
-- **No lock file**: Allows any package manager
-
-**Detected commands:** `install`, `add`, `remove`, `uninstall`, `ci`, `update`, `upgrade`, `link`, `rebuild`, `dedupe` (and short aliases like `i`, `rm`, `un`, `up`)
-
-#### Dangerous Paths Pattern Matching
-
-The `dangerous-paths` option supports two pattern types:
-
-| Pattern | Behavior | Example |
-|---------|----------|---------|
-| Trailing slash (e.g., `~/`) | Only blocks exact directory or direct wildcards | `rm ~/`, `rm ~/*`, `rm ~/.*` |
-| No trailing slash (e.g., `/etc/nginx`) | Blocks the path and all children | `rm /etc/nginx`, `rm /etc/nginx/conf.d/default.conf` |
-
-**Examples with `~/` pattern:**
-
-| Command | Blocked | Reason |
-|---------|---------|--------|
-| `rm ~/` | Yes | Exact home directory |
-| `rm ~/*` | Yes | Wildcard directly under home |
-| `rm ~/.*` | Yes | Hidden files wildcard directly under home |
-| `rm ~/Documents/file.txt` | No | Specific file in subdirectory |
-| `rm ~/Downloads/*` | No | Wildcard in subdirectory |
-
-### Rust Code Checks (Edit/Write)
-
-- **deny-rust-allow**: Denies adding `#[allow(...)]` or `#[expect(...)]` attributes to Rust files
-  - Ignores comments (`//`, `/* */`) and string literals
-  - Configurable to allow `#[expect(...)]` while denying `#[allow(...)]`
-  - Supports custom messages
+- `deny-rust-allow`: Denies adding `#[allow(...)]` or `#[expect(...)]` attributes to Rust files
+- `expect`: With `deny-rust-allow`, allows `#[expect(...)]` while still denying `#[allow(...)]`
+- `additional-context`: Appends a custom denial message
 
 ## Installation
 
-Pre-built binaries are available from GitHub Releases. The `run_after_20_agent-hooks.sh` (Unix) or `run_after_20_agent-hooks.ps1` (Windows) scripts will automatically download the latest version.
+Pre-built binaries are published on GitHub Releases. The dotfiles install scripts download the unified CLI plus the OpenCode `.node` file automatically.
 
-### Manual Installation
+### Manual installation
 
-#### Claude CLI
-
-```bash
-# Download the binary for your platform
-curl -fsSL -o ~/.claude/hooks/agent_hooks_claude \
-  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_claude-<platform>
-
-chmod +x ~/.claude/hooks/agent_hooks_claude
-```
-
-#### Copilot CLI
+#### Unified CLI
 
 ```bash
 # Download the binary for your platform
-curl -fsSL -o ~/.local/bin/agent_hooks_copilot \
-  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_copilot-<platform>
+curl -fsSL -o ~/.local/bin/agent_hooks \
+  https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks-<platform>
 
-chmod +x ~/.local/bin/agent_hooks_copilot
+chmod +x ~/.local/bin/agent_hooks
 ```
 
-#### OpenCode Plugin
+#### OpenCode plugin
 
 ```bash
-# Download the .node file for your platform
 curl -fsSL -o ~/.config/opencode/plugin/agent_hooks.node \
   https://github.com/waki285/dotfiles-tools/releases/download/agent_hooks-vX.Y.Z/agent_hooks_opencode-<platform>.node
 ```
@@ -104,8 +53,6 @@ curl -fsSL -o ~/.config/opencode/plugin/agent_hooks.node \
 ## Usage
 
 ### Claude Code
-
-#### Configuration
 
 Add to `~/.claude/settings.json`:
 
@@ -118,7 +65,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/agent_hooks_claude pre-tool-use --deny-rust-allow --expect"
+            "command": "agent_hooks claude pre-tool-use --deny-rust-allow --expect"
           }
         ]
       },
@@ -127,7 +74,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/agent_hooks_claude pre-tool-use --check-package-manager --deny-destructive-find"
+            "command": "agent_hooks claude pre-tool-use --check-package-manager --deny-destructive-find"
           }
         ]
       }
@@ -138,7 +85,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/agent_hooks_claude permission-request --block-rm"
+            "command": "agent_hooks claude permission-request --block-rm"
           }
         ]
       }
@@ -147,49 +94,57 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-#### CLI Flags
-
-##### `permission-request` command
-
-| Flag | Description |
-|------|-------------|
-| `--block-rm` | Block `rm` commands and suggest using `trash` instead |
-| `--dangerous-paths <paths>` | Comma-separated list of dangerous paths to protect. Use trailing slash (e.g., `~/`) to only block exact directory or wildcards. |
-
-##### `pre-tool-use` command
-
-| Flag | Description |
-|------|-------------|
-| `--deny-rust-allow` | Deny `#[allow(...)]` attributes in Rust files |
-| `--expect` | With `--deny-rust-allow`: allow `#[expect(...)]` while denying `#[allow(...)]` |
-| `--additional-context <string>` | With `--deny-rust-allow`: append custom message to the denial reason |
-| `--check-package-manager` | Deny package manager commands that don't match the project's lock file |
-| `--deny-destructive-find` | Deny destructive `find` commands (e.g., `find -delete`, `find -exec rm`) |
-| `--deny-nul-redirect` | Windows only. Deny redirects to `nul` (e.g., `> nul`, `2> nul`, `&> nul`) |
-
-#### CLI Examples
+Examples:
 
 ```bash
-# Block rm commands
-echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | \
-  agent_hooks_claude permission-request --block-rm
-
-# Deny destructive find commands
 echo '{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.tmp\" -delete"}}' | \
-  agent_hooks_claude pre-tool-use --deny-destructive-find
+  agent_hooks claude pre-tool-use --deny-destructive-find
 
-# Windows only: deny redirects to nul and require /dev/null
-echo '{"tool_name":"Bash","tool_input":{"command":"echo test > nul"}}' | \
-  agent_hooks_claude pre-tool-use --deny-nul-redirect
-
-# Deny #[allow] in Rust files, allow #[expect]
 echo '{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs","new_string":"#[allow(dead_code)]"}}' | \
-  agent_hooks_claude pre-tool-use --deny-rust-allow --expect
+  agent_hooks claude pre-tool-use --deny-rust-allow --expect
 ```
 
-### Copilot CLI
+### Codex
 
-#### Configuration
+Enable hooks in `~/.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Then create `~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent_hooks codex pre-tool-use --block-rm --check-package-manager --deny-destructive-find"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Current Codex support is Bash-only because Codex `PreToolUse` currently covers Bash tool calls. The CLI does not expose Rust edit checks for Codex.
+
+Windows note: this repository only enables Codex hooks automatically on non-Windows hosts.
+
+Example:
+
+```bash
+echo '{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_use_id":"tool","tool_input":{"command":"rm -rf /tmp/test"}}' | \
+  agent_hooks codex pre-tool-use --block-rm
+```
+
+### GitHub Copilot CLI
 
 Create `.github/hooks/agent-hooks.json` in your repository:
 
@@ -200,47 +155,24 @@ Create `.github/hooks/agent-hooks.json` in your repository:
     "preToolUse": [
       {
         "type": "command",
-        "bash": "agent_hooks_copilot pre-tool-use --block-rm --deny-destructive-find --check-package-manager --deny-rust-allow --expect"
+        "bash": "agent_hooks copilot pre-tool-use --block-rm --deny-destructive-find --check-package-manager --deny-rust-allow --expect"
       }
     ]
   }
 }
 ```
 
-#### CLI Flags
-
-##### `pre-tool-use` command
-
-| Flag | Description |
-|------|-------------|
-| `--block-rm` | Block `rm` commands and suggest using `trash` instead |
-| `--dangerous-paths <paths>` | Comma-separated list of dangerous paths to protect from rm/trash/mv |
-| `--deny-rust-allow` | Deny `#[allow(...)]` attributes in Rust files |
-| `--expect` | With `--deny-rust-allow`: allow `#[expect(...)]` while denying `#[allow(...)]` |
-| `--additional-context <string>` | With `--deny-rust-allow`: append custom message to the denial reason |
-| `--check-package-manager` | Deny package manager commands that don't match the project's lock file |
-| `--deny-destructive-find` | Deny destructive `find` commands (e.g., `find -delete`, `find -exec rm`) |
-| `--deny-nul-redirect` | Windows only. Deny redirects to `nul` (e.g., `> nul`, `2> nul`, `&> nul`) |
-
-#### CLI Examples
+Examples:
 
 ```bash
-# Block rm in Copilot preToolUse input
-echo '{"toolName":"bash","toolArgs":"{\"command\":\"rm -rf /tmp/test\"}"}' | \
-  agent_hooks_copilot pre-tool-use --block-rm
+echo '{"toolName":"bash","toolArgs":"{\"command\":\"rm -rf /tmp/test\"}","cwd":"/repo"}' | \
+  agent_hooks copilot pre-tool-use --block-rm
 
-# Deny destructive find in Copilot preToolUse input
-echo '{"toolName":"bash","toolArgs":"{\"command\":\"find . -name \\\"*.tmp\\\" -delete\"}"}' | \
-  agent_hooks_copilot pre-tool-use --deny-destructive-find
-
-# Deny #[allow] in Rust edits for Copilot preToolUse input
-echo '{"toolName":"edit","toolArgs":"{\"filePath\":\"src/main.rs\",\"content\":\"#[allow(dead_code)]\"}"}' | \
-  agent_hooks_copilot pre-tool-use --deny-rust-allow --expect
+echo '{"toolName":"edit","toolArgs":"{\"filePath\":\"src/main.rs\",\"content\":\"#[allow(dead_code)]\"}","cwd":"/repo"}' | \
+  agent_hooks copilot pre-tool-use --deny-rust-allow --expect
 ```
 
 ### OpenCode
-
-#### Configuration
 
 Create `~/.config/opencode/plugin/agent_hooks.json`:
 
@@ -252,56 +184,80 @@ Create `~/.config/opencode/plugin/agent_hooks.json`:
 }
 ```
 
-#### Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `allowExpect` | boolean | `false` | Allow `#[expect(...)]` while denying `#[allow(...)]` |
-| `additionalContext` | string | - | Custom message to append to denial errors |
-| `dangerousPaths` | string[] | `[]` | List of dangerous paths to protect from rm/trash/mv. Use trailing slash (e.g., `~/`) to only block exact directory or wildcards; without trailing slash blocks all children. |
-| `checkPackageManager` | boolean | `false` | Check for package manager mismatches (e.g., using npm when pnpm-lock.yaml exists) |
-
-#### Plugin Setup
+Plugin setup:
 
 1. Place `agent_hooks.node` in `~/.config/opencode/plugin/`
 2. Place `agent_hooks.ts` in `~/.config/opencode/plugin/`
-3. Create `agent_hooks.json` in `~/.config/opencode/plugin/` (see above)
+3. Create `agent_hooks.json` in `~/.config/opencode/plugin/`
 
 The plugin automatically:
-- Blocks `rm` commands
-- Blocks rm/trash/mv commands targeting dangerous paths (if configured)
-- Warns on destructive `find` commands
-- Denies `#[allow(...)]` / `#[expect(...)]` in Rust files based on configuration
 
-## Supported Platforms
+- blocks `rm` commands
+- blocks `rm`/`trash`/`mv` commands targeting dangerous paths
+- warns on destructive `find` commands
+- denies `#[allow(...)]` / `#[expect(...)]` in Rust files based on configuration
 
-### Claude CLI
+## CLI flags
 
-| Platform | Architecture | Binary Name |
+### `claude permission-request`
+
+| Flag | Description |
+|------|-------------|
+| `--block-rm` | Block `rm` commands and suggest using `trash` instead |
+| `--dangerous-paths <paths>` | Protect dangerous paths from `rm`/`trash`/`mv` and ask for confirmation |
+
+### `claude pre-tool-use`
+
+| Flag | Description |
+|------|-------------|
+| `--deny-rust-allow` | Deny `#[allow(...)]` in Rust edits |
+| `--expect` | Allow `#[expect(...)]` while denying `#[allow(...)]` |
+| `--additional-context <msg>` | Append extra denial context |
+| `--check-package-manager` | Deny mismatched package manager commands |
+| `--deny-destructive-find` | Deny destructive `find` commands |
+| `--deny-nul-redirect` | Windows only. Deny `> nul`, `2> nul`, and `&> nul` |
+
+### `codex pre-tool-use`
+
+| Flag | Description |
+|------|-------------|
+| `--block-rm` | Block `rm` commands |
+| `--dangerous-paths <paths>` | Deny dangerous path operations |
+| `--check-package-manager` | Deny mismatched package manager commands |
+| `--deny-destructive-find` | Deny destructive `find` commands |
+| `--deny-nul-redirect` | Windows only. Deny `nul` redirects |
+
+### `copilot pre-tool-use`
+
+| Flag | Description |
+|------|-------------|
+| `--block-rm` | Block `rm` commands |
+| `--dangerous-paths <paths>` | Deny dangerous path operations |
+| `--deny-rust-allow` | Deny `#[allow(...)]` in Rust edits |
+| `--expect` | Allow `#[expect(...)]` while denying `#[allow(...)]` |
+| `--additional-context <msg>` | Append extra denial context |
+| `--check-package-manager` | Deny mismatched package manager commands |
+| `--deny-destructive-find` | Deny destructive `find` commands |
+| `--deny-nul-redirect` | Windows only. Deny `nul` redirects |
+
+## Supported platforms
+
+### Unified CLI
+
+| Platform | Architecture | Binary name |
 |----------|--------------|-------------|
-| macOS | x86_64 | `agent_hooks_claude-macos-x86_64` |
-| macOS | arm64 | `agent_hooks_claude-macos-arm64` |
-| Linux | x86_64 | `agent_hooks_claude-linux-x86_64` |
-| Linux | arm64 | `agent_hooks_claude-linux-arm64` |
-| Windows | x86_64 | `agent_hooks_claude-windows-x86_64.exe` |
-| Windows | arm64 | `agent_hooks_claude-windows-arm64.exe` |
+| macOS | x86_64 | `agent_hooks-macos-x86_64` |
+| macOS | arm64 | `agent_hooks-macos-arm64` |
+| Linux | x86_64 | `agent_hooks-linux-x86_64` |
+| Linux | arm64 | `agent_hooks-linux-arm64` |
+| Windows | x86_64 | `agent_hooks-windows-x86_64.exe` |
+| Windows | arm64 | `agent_hooks-windows-arm64.exe` |
 
 Linux binaries are statically linked with musl, and Windows binaries are statically linked with CRT for maximum compatibility.
 
-### Copilot CLI
-
-| Platform | Architecture | Binary Name |
-|----------|--------------|-------------|
-| macOS | x86_64 | `agent_hooks_copilot-macos-x86_64` |
-| macOS | arm64 | `agent_hooks_copilot-macos-arm64` |
-| Linux | x86_64 | `agent_hooks_copilot-linux-x86_64` |
-| Linux | arm64 | `agent_hooks_copilot-linux-arm64` |
-| Windows | x86_64 | `agent_hooks_copilot-windows-x86_64.exe` |
-| Windows | arm64 | `agent_hooks_copilot-windows-arm64.exe` |
-
 ### OpenCode NAPI
 
-| Platform | Architecture | Binary Name |
+| Platform | Architecture | Binary name |
 |----------|--------------|-------------|
 | macOS | x86_64 | `agent_hooks_opencode-macos-x86_64.node` |
 | macOS | arm64 | `agent_hooks_opencode-macos-arm64.node` |
@@ -312,42 +268,21 @@ Linux binaries are statically linked with musl, and Windows binaries are statica
 
 ## Core API
 
-The core library exports simple check functions that can be used by any client:
+The core library exports simple check functions that can be reused by other clients:
 
 ```rust
-// Check if a command contains rm
 pub fn is_rm_command(cmd: &str) -> bool
-
-// Check for destructive find commands, returns description if found
 pub fn check_destructive_find(cmd: &str) -> Option<&'static str>
-
-// Check if a command redirects output to nul
 pub fn has_nul_redirect(cmd: &str) -> bool
-
-// Check if a file path is a Rust file
 pub fn is_rust_file(file_path: &str) -> bool
-
-// Check for #[allow(...)] / #[expect(...)] attributes
 pub fn check_rust_allow_attributes(content: &str) -> RustAllowCheckResult
-
-// Check if a bash command targets dangerous paths with rm/trash/mv
-// Pattern behavior:
-// - Trailing slash (e.g., "~/"): only matches exact directory or direct wildcards
-// - No trailing slash (e.g., "/etc/nginx"): matches the path and all children
 pub fn check_dangerous_path_command(cmd: &str, dangerous_paths: &[&str]) -> Option<DangerousPathCheck>
-
-// Detect which package manager a command is trying to use
 pub fn detect_package_manager_command(cmd: &str) -> Option<PackageManager>
-
-// Find lock files starting from start_dir and searching up to parent directories
 pub fn find_lock_files(start_dir: &Path) -> Vec<PackageManager>
-
-// Check if a bash command uses a mismatched package manager
-// Searches for lock files starting from start_dir and going up to parent directories
 pub fn check_package_manager(cmd: &str, start_dir: &Path) -> PackageManagerCheckResult
 ```
 
-## Building from Source
+## Building from source
 
 ```bash
 cd agent_hooks
@@ -355,11 +290,8 @@ cd agent_hooks
 # Build all packages
 cargo build --release
 
-# Build Claude CLI only
-cargo build -p agent_hooks_claude --release
-
-# Build Copilot CLI only
-cargo build -p agent_hooks_copilot --release
+# Build unified CLI only
+cargo build -p agent_hooks --release
 
 # Build OpenCode NAPI only
 cargo build -p agent_hooks_opencode --release
@@ -368,7 +300,7 @@ cargo build -p agent_hooks_opencode --release
 cargo test
 ```
 
-### OpenCode .node Installation from Source
+### OpenCode `.node` installation from source
 
 ```bash
 cd agent_hooks

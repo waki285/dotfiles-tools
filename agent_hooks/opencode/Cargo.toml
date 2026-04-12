@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-agent_hooks = { path = "../core" }
+agent_hooks = { package = "agent_hooks_core", path = "../core" }
 napi = "3"
 napi-derive = "3"
 

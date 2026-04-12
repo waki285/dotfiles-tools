@@ -6,34 +6,23 @@ version = 4
 name = "agent_hooks"
 version = "0.6.0"
 dependencies = [
+ "agent_hooks_core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "agent_hooks_core"
+version = "0.6.0"
+dependencies = [
  "regex",
-]
-
-[[package]]
-name = "agent_hooks_claude"
-version = "0.6.0"
-dependencies = [
- "agent_hooks",
- "seahorse",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "agent_hooks_copilot"
-version = "0.6.0"
-dependencies = [
- "agent_hooks",
- "seahorse",
- "serde",
- "serde_json",
 ]
 
 [[package]]
 name = "agent_hooks_opencode"
 version = "0.6.0"
 dependencies = [
- "agent_hooks",
+ "agent_hooks_core",
  "napi",
  "napi-build",
  "napi-derive",
@@ -523,12 +512,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "seahorse"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25679a62f678e7485f21abdea76f91a15322a0fe51efea791fd9d124f1c473c"
 
 [[package]]
 name = "semver"
