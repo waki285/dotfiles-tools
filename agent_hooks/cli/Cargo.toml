@@ -1,6 +1,6 @@
 [package]
 name = "agent_hooks"
-version = "0.6.0"
+version = "0.7.0"
 edition.workspace = true
 description = "Unified agent_hooks CLI for Claude Code, Codex, and GitHub Copilot CLI"
 license.workspace = true

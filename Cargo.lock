@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "agent_hooks"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "agent_hooks_core",
  "serde",
@@ -13,14 +13,14 @@ dependencies = [
 
 [[package]]
 name = "agent_hooks_core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "agent_hooks_opencode"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "agent_hooks_core",
  "napi",
