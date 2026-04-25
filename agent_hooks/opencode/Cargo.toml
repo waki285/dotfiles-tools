@@ -1,6 +1,6 @@
 [package]
 name = "agent_hooks_opencode"
-version = "0.7.0"
+version = "0.7.1"
 edition.workspace = true
 description = "agent_hooks NAPI bindings for OpenCode"
 license.workspace = true
