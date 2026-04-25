@@ -106,18 +106,22 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"src/main.rs","new_string":"
 
 ### Codex
 
-Enable hooks in `~/.codex/config.toml`:
-
-```toml
-[features]
-codex_hooks = true
-```
-
-Then create `~/.codex/hooks.json`:
+Create `~/.codex/hooks.json`:
 
 ```json
 {
   "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent_hooks codex permission-request --block-rm"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -127,21 +131,38 @@ Then create `~/.codex/hooks.json`:
             "command": "agent_hooks codex pre-tool-use --block-rm --check-package-manager --deny-destructive-find"
           }
         ]
+      },
+      {
+        "matcher": "apply_patch|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent_hooks codex pre-tool-use --deny-rust-allow --expect"
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-Current Codex support is Bash-only because Codex `PreToolUse` currently covers Bash tool calls. The CLI does not expose Rust edit checks for Codex.
+Current Codex support covers:
 
-Windows note: this repository only enables Codex hooks automatically on non-Windows hosts.
+- `PermissionRequest` for `Bash` permission denials such as `rm`
+- `PreToolUse` for `Bash` safety checks
+- `PreToolUse` for `apply_patch` Rust `#[allow(...)]` / `#[expect(...)]` checks
 
 Example:
 
 ```bash
 echo '{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_use_id":"tool","tool_input":{"command":"rm -rf /tmp/test"}}' | \
   agent_hooks codex pre-tool-use --block-rm
+
+echo '{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PermissionRequest","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}' | \
+  agent_hooks codex permission-request --block-rm
+
+echo '{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"apply_patch","tool_use_id":"tool","tool_input":{"command":"*** Begin Patch\n*** Update File: src/main.rs\n@@\n+#[allow(dead_code)]\n*** End Patch\n"}}' | \
+  agent_hooks codex pre-tool-use --deny-rust-allow --expect
 ```
 
 ### GitHub Copilot CLI
@@ -217,12 +238,22 @@ The plugin automatically:
 | `--deny-destructive-find` | Deny destructive `find` commands |
 | `--deny-nul-redirect` | Windows only. Deny `> nul`, `2> nul`, and `&> nul` |
 
+### `codex permission-request`
+
+| Flag | Description |
+|------|-------------|
+| `--block-rm` | Block `rm` commands |
+| `--dangerous-paths <paths>` | Deny dangerous path operations |
+
 ### `codex pre-tool-use`
 
 | Flag | Description |
 |------|-------------|
 | `--block-rm` | Block `rm` commands |
 | `--dangerous-paths <paths>` | Deny dangerous path operations |
+| `--deny-rust-allow` | Deny `#[allow(...)]` in `apply_patch` Rust edits |
+| `--expect` | Allow `#[expect(...)]` while denying `#[allow(...)]` |
+| `--additional-context <msg>` | Append extra denial context |
 | `--check-package-manager` | Deny mismatched package manager commands |
 | `--deny-destructive-find` | Deny destructive `find` commands |
 | `--deny-nul-redirect` | Windows only. Deny `nul` redirects |

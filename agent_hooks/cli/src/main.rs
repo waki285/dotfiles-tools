@@ -5,6 +5,7 @@ use agent_hooks::{
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process;
@@ -14,6 +15,7 @@ Usage:
   agent_hooks claude permission-request [flags]
   agent_hooks claude pre-tool-use [flags]
   agent_hooks copilot pre-tool-use [flags]
+  agent_hooks codex permission-request [flags]
   agent_hooks codex pre-tool-use [flags]
 
 Flags:
@@ -187,19 +189,13 @@ struct CopilotHookOutput {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodexPreToolUseInput {
+struct CodexHookInput {
     #[serde(default)]
     cwd: String,
     #[serde(default)]
     tool_name: String,
     #[serde(default)]
-    tool_input: CodexToolInput,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct CodexToolInput {
-    #[serde(default)]
-    command: String,
+    tool_input: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,8 +212,29 @@ struct CodexPreToolUseHookSpecificOutput {
     permission_decision_reason: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexPermissionRequestOutput {
+    hook_specific_output: CodexPermissionRequestHookSpecificOutput,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexPermissionRequestHookSpecificOutput {
+    hook_event_name: CodexHookEventName,
+    decision: CodexPermissionRequestDecision,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexPermissionRequestDecision {
+    behavior: CodexPermissionDecision,
+    message: String,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 enum CodexHookEventName {
+    PermissionRequest,
     PreToolUse,
 }
 
@@ -290,7 +307,8 @@ fn parse_cli(args: impl Iterator<Item = String>) -> Result<ParseCliResult, Strin
 
     match (provider, event) {
         (Provider::Claude, Event::PermissionRequest | Event::PreToolUse)
-        | (Provider::Copilot | Provider::Codex, Event::PreToolUse) => {}
+        | (Provider::Copilot, Event::PreToolUse)
+        | (Provider::Codex, Event::PermissionRequest | Event::PreToolUse) => {}
         _ => {
             return Err(format!(
                 "unsupported provider/event combination: {} {}",
@@ -353,6 +371,9 @@ fn execute(parsed: &ParsedCli, input: &str) -> io::Result<Option<String>> {
         }
         (Provider::Copilot, Event::PreToolUse) => {
             Ok(handle_copilot_pre_tool_use(&parsed.options, input))
+        }
+        (Provider::Codex, Event::PermissionRequest) => {
+            Ok(handle_codex_permission_request(&parsed.options, input))
         }
         (Provider::Codex, Event::PreToolUse) => {
             Ok(handle_codex_pre_tool_use(&parsed.options, input))
@@ -520,6 +541,7 @@ fn handle_copilot_pre_tool_use(options: &CliOptions, input: &str) -> Option<Stri
 fn handle_codex_pre_tool_use(options: &CliOptions, input: &str) -> Option<String> {
     if !options.bash_permissions.block_rm
         && options.bash_permissions.dangerous_paths.is_none()
+        && !options.rust_edits.deny_rust_allow
         && !options.bash_safety.check_package_manager
         && !options.bash_safety.deny_destructive_find
         && !options.bash_safety.deny_nul_redirect
@@ -527,16 +549,57 @@ fn handle_codex_pre_tool_use(options: &CliOptions, input: &str) -> Option<String
         return None;
     }
 
-    let data: CodexPreToolUseInput = parse_json(input)?;
+    let data: CodexHookInput = parse_json(input)?;
+    let tool_name = data.tool_name.trim();
+
+    if matches_tool_name(tool_name, &["Bash"])
+        && let Some(cmd) = extract_codex_command(&data.tool_input)
+        && let Some(reason) = evaluate_bash_denial(
+            cmd,
+            Some(data.cwd.trim()),
+            options,
+            BashChecks {
+                block_rm: true,
+                dangerous_paths: true,
+            },
+        )
+    {
+        return serialize_json(&CodexPreToolUseOutput {
+            hook_specific_output: CodexPreToolUseHookSpecificOutput {
+                hook_event_name: CodexHookEventName::PreToolUse,
+                permission_decision: CodexPermissionDecision::Deny,
+                permission_decision_reason: reason,
+            },
+        });
+    }
+
+    if !options.rust_edits.deny_rust_allow {
+        return None;
+    }
+
+    let edit = extract_codex_rust_edit(tool_name, &data.tool_input)?;
+    let reason = build_rust_allow_denial(options, &edit.content)?;
+
+    serialize_json(&CodexPreToolUseOutput {
+        hook_specific_output: CodexPreToolUseHookSpecificOutput {
+            hook_event_name: CodexHookEventName::PreToolUse,
+            permission_decision: CodexPermissionDecision::Deny,
+            permission_decision_reason: reason,
+        },
+    })
+}
+
+fn handle_codex_permission_request(options: &CliOptions, input: &str) -> Option<String> {
+    if !options.bash_permissions.block_rm && options.bash_permissions.dangerous_paths.is_none() {
+        return None;
+    }
+
+    let data: CodexHookInput = parse_json(input)?;
     if !matches_tool_name(&data.tool_name, &["Bash"]) {
         return None;
     }
 
-    let cmd = data.tool_input.command.trim();
-    if cmd.is_empty() {
-        return None;
-    }
-
+    let cmd = extract_codex_command(&data.tool_input)?;
     let reason = evaluate_bash_denial(
         cmd,
         Some(data.cwd.trim()),
@@ -547,11 +610,13 @@ fn handle_codex_pre_tool_use(options: &CliOptions, input: &str) -> Option<String
         },
     )?;
 
-    serialize_json(&CodexPreToolUseOutput {
-        hook_specific_output: CodexPreToolUseHookSpecificOutput {
-            hook_event_name: CodexHookEventName::PreToolUse,
-            permission_decision: CodexPermissionDecision::Deny,
-            permission_decision_reason: reason,
+    serialize_json(&CodexPermissionRequestOutput {
+        hook_specific_output: CodexPermissionRequestHookSpecificOutput {
+            hook_event_name: CodexHookEventName::PermissionRequest,
+            decision: CodexPermissionRequestDecision {
+                behavior: CodexPermissionDecision::Deny,
+                message: reason,
+            },
         },
     })
 }
@@ -675,12 +740,19 @@ fn validate_option_support(
     let supports_block_rm = matches!(
         (provider, event),
         (Provider::Claude, Event::PermissionRequest)
-            | (Provider::Copilot | Provider::Codex, Event::PreToolUse)
+            | (Provider::Copilot, Event::PreToolUse)
+            | (
+                Provider::Codex,
+                Event::PermissionRequest | Event::PreToolUse
+            )
     );
     let supports_dangerous_paths = supports_block_rm;
     let supports_rust_allow = matches!(
         (provider, event),
-        (Provider::Claude | Provider::Copilot, Event::PreToolUse)
+        (
+            Provider::Claude | Provider::Copilot | Provider::Codex,
+            Event::PreToolUse
+        )
     );
     let supports_expect = supports_rust_allow;
     let supports_additional_context = supports_rust_allow;
@@ -769,6 +841,54 @@ fn extract_copilot_rust_edit(tool_args: &CopilotToolArgs) -> Option<RustEdit> {
     })
 }
 
+fn extract_codex_command(tool_input: &Value) -> Option<&str> {
+    tool_input
+        .get("command")?
+        .as_str()
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+}
+
+fn extract_codex_rust_edit(tool_name: &str, tool_input: &Value) -> Option<RustEdit> {
+    if !matches_tool_name(tool_name, &["apply_patch", "Edit", "Write"]) {
+        return None;
+    }
+
+    let content = extract_apply_patch_rust_additions(extract_codex_command(tool_input)?)?;
+    Some(RustEdit { content })
+}
+
+fn extract_apply_patch_rust_additions(patch: &str) -> Option<String> {
+    let mut current_is_rust = false;
+    let mut additions = Vec::new();
+
+    for line in patch.lines() {
+        if let Some(path) = line
+            .strip_prefix("*** Add File: ")
+            .or_else(|| line.strip_prefix("*** Update File: "))
+            .or_else(|| line.strip_prefix("*** Move to: "))
+        {
+            current_is_rust = is_rust_file(path.trim());
+            continue;
+        }
+
+        if line.starts_with("*** Delete File: ") {
+            current_is_rust = false;
+            continue;
+        }
+
+        if current_is_rust && let Some(added_line) = line.strip_prefix('+') {
+            additions.push(added_line.to_string());
+        }
+    }
+
+    if additions.is_empty() {
+        None
+    } else {
+        Some(additions.join("\n"))
+    }
+}
+
 fn parse_dangerous_paths(paths: Option<&str>) -> Vec<&str> {
     paths
         .into_iter()
@@ -812,14 +932,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_cli_rejects_codex_rust_flags() {
+    fn parse_cli_accepts_codex_rust_flags() {
         let result = parse_cli(
             ["codex", "pre-tool-use", "--deny-rust-allow"]
                 .into_iter()
                 .map(String::from),
         );
 
-        assert!(result.is_err());
+        assert!(matches!(result, Ok(ParseCliResult::Run(_))));
     }
 
     #[test]
@@ -831,6 +951,17 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_cli_accepts_codex_permission_request() {
+        let result = parse_cli(
+            ["codex", "permission-request", "--block-rm"]
+                .into_iter()
+                .map(String::from),
+        );
+
+        assert!(matches!(result, Ok(ParseCliResult::Run(_))));
     }
 
     #[test]
@@ -965,6 +1096,33 @@ mod tests {
     }
 
     #[test]
+    fn codex_pre_tool_use_denies_rust_allow_in_apply_patch() {
+        let parsed = ParsedCli {
+            provider: Provider::Codex,
+            event: Event::PreToolUse,
+            options: CliOptions {
+                rust_edits: RustEditOptions {
+                    deny_rust_allow: true,
+                    expect: true,
+                    ..RustEditOptions::default()
+                },
+                ..CliOptions::default()
+            },
+        };
+
+        let output = run_hook(
+            &parsed,
+            r#"{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"apply_patch","tool_use_id":"tool","tool_input":{"command":"*** Begin Patch\n*** Update File: src/main.rs\n@@\n+#[allow(dead_code)]\n*** End Patch\n"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"],
+            Value::String("deny".to_string())
+        );
+    }
+
+    #[test]
     fn codex_pre_tool_use_denies_package_manager_mismatch() {
         let temp_dir = std::env::temp_dir().join("agent_hooks_cli_codex_pm");
         let _ = std::fs::create_dir_all(&temp_dir);
@@ -998,5 +1156,35 @@ mod tests {
 
         let _ = std::fs::remove_file(temp_dir.join("pnpm-lock.yaml"));
         let _ = std::fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn codex_permission_request_blocks_rm() {
+        let parsed = ParsedCli {
+            provider: Provider::Codex,
+            event: Event::PermissionRequest,
+            options: CliOptions {
+                bash_permissions: BashPermissionOptions {
+                    block_rm: true,
+                    ..BashPermissionOptions::default()
+                },
+                ..CliOptions::default()
+            },
+        };
+
+        let output = run_hook(
+            &parsed,
+            r#"{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PermissionRequest","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            output["hookSpecificOutput"]["hookEventName"],
+            Value::String("PermissionRequest".to_string())
+        );
+        assert_eq!(
+            output["hookSpecificOutput"]["decision"]["behavior"],
+            Value::String("deny".to_string())
+        );
     }
 }
