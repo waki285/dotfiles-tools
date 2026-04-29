@@ -13,14 +13,14 @@ dependencies = [
 
 [[package]]
 name = "agent_hooks_core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "agent_hooks_opencode"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "agent_hooks_core",
  "napi",
@@ -113,6 +113,12 @@ dependencies = [
  "ctor-proc-macro",
  "dtor",
 ]
+
+[[package]]
+name = "ctor"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "400a21f1014a968ec518c7ccdf9b4a4ed0cac8c56ccb6d604f8b91f00110501e"
 
 [[package]]
 name = "ctor-proc-macro"
@@ -333,12 +339,12 @@ dependencies = [
 
 [[package]]
 name = "napi"
-version = "3.8.5"
+version = "3.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa73b028610e2b26e9e40bd2c8ff8a98e6d7ed5d67d89ebf4bfd2f992616b024"
+checksum = "8e55037284865448ecf329baa86a4d05401f647ebde99f5747b640d32c2c5226"
 dependencies = [
  "bitflags",
- "ctor",
+ "ctor 0.11.1",
  "futures",
  "napi-build",
  "napi-sys",
@@ -359,7 +365,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7430702d3cc05cf55f0a2c9e41d991c3b7a53f91e6146a8f282b1bfc7f3fd133"
 dependencies = [
  "convert_case 0.11.0",
- "ctor",
+ "ctor 0.10.1",
  "napi-derive-backend",
  "proc-macro2",
  "quote",
