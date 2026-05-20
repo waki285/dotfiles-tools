@@ -20,6 +20,7 @@ agent_hooks/
 - `dangerous-paths`: Detects `rm`/`trash`/`mv` commands targeting configured paths
 - `check-package-manager`: Detects package manager mismatches such as `npm` in a `pnpm-lock.yaml` repo
 - `deny-nul-redirect`: Windows only. Denies redirects to `nul` and enforces `/dev/null`
+- `prefer-uv`: Denies direct `python`/`python3`/`pip` usage and suggests `uv`
 
 ### Rust edit checks
 
@@ -74,7 +75,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "agent_hooks claude pre-tool-use --check-package-manager --deny-destructive-find"
+            "command": "agent_hooks claude pre-tool-use --check-package-manager --deny-destructive-find --prefer-uv"
           }
         ]
       }
@@ -128,7 +129,7 @@ Create `~/.codex/hooks.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "agent_hooks codex pre-tool-use --block-rm --check-package-manager --deny-destructive-find"
+            "command": "agent_hooks codex pre-tool-use --block-rm --check-package-manager --deny-destructive-find --prefer-uv"
           }
         ]
       },
@@ -176,7 +177,7 @@ Create `.github/hooks/agent-hooks.json` in your repository:
     "preToolUse": [
       {
         "type": "command",
-        "bash": "agent_hooks copilot pre-tool-use --block-rm --deny-destructive-find --check-package-manager --deny-rust-allow --expect"
+        "bash": "agent_hooks copilot pre-tool-use --block-rm --deny-destructive-find --check-package-manager --prefer-uv --deny-rust-allow --expect"
       }
     ]
   }
@@ -201,7 +202,8 @@ Create `~/.config/opencode/plugin/agent_hooks.json`:
 {
   "allowExpect": true,
   "additionalContext": "See project guidelines",
-  "dangerousPaths": ["~/"]
+  "dangerousPaths": ["~/"],
+  "preferUv": true
 }
 ```
 
@@ -216,6 +218,7 @@ The plugin automatically:
 - blocks `rm` commands
 - blocks `rm`/`trash`/`mv` commands targeting dangerous paths
 - warns on destructive `find` commands
+- denies direct `python`/`python3`/`pip` usage when `preferUv` is enabled
 - denies `#[allow(...)]` / `#[expect(...)]` in Rust files based on configuration
 
 ## CLI flags
@@ -237,6 +240,7 @@ The plugin automatically:
 | `--check-package-manager` | Deny mismatched package manager commands |
 | `--deny-destructive-find` | Deny destructive `find` commands |
 | `--deny-nul-redirect` | Windows only. Deny `> nul`, `2> nul`, and `&> nul` |
+| `--prefer-uv` | Deny direct `python`/`python3`/`pip` usage and suggest `uv` |
 
 ### `codex permission-request`
 
@@ -257,6 +261,7 @@ The plugin automatically:
 | `--check-package-manager` | Deny mismatched package manager commands |
 | `--deny-destructive-find` | Deny destructive `find` commands |
 | `--deny-nul-redirect` | Windows only. Deny `nul` redirects |
+| `--prefer-uv` | Deny direct `python`/`python3`/`pip` usage and suggest `uv` |
 
 ### `copilot pre-tool-use`
 
@@ -270,6 +275,7 @@ The plugin automatically:
 | `--check-package-manager` | Deny mismatched package manager commands |
 | `--deny-destructive-find` | Deny destructive `find` commands |
 | `--deny-nul-redirect` | Windows only. Deny `nul` redirects |
+| `--prefer-uv` | Deny direct `python`/`python3`/`pip` usage and suggest `uv` |
 
 ## Supported platforms
 
@@ -305,6 +311,7 @@ The core library exports simple check functions that can be reused by other clie
 pub fn is_rm_command(cmd: &str) -> bool
 pub fn check_destructive_find(cmd: &str) -> Option<&'static str>
 pub fn has_nul_redirect(cmd: &str) -> bool
+pub fn detect_legacy_python_command(cmd: &str) -> Option<LegacyPythonTool>
 pub fn is_rust_file(file_path: &str) -> bool
 pub fn check_rust_allow_attributes(content: &str) -> RustAllowCheckResult
 pub fn check_dangerous_path_command(cmd: &str, dangerous_paths: &[&str]) -> Option<DangerousPathCheck>

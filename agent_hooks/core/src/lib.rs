@@ -131,6 +131,63 @@ pub fn has_nul_redirect(cmd: &str) -> bool {
 }
 
 // ============================================================================
+// Python command detection for uv migration
+// ============================================================================
+
+#[cfg(not(windows))]
+static LEGACY_PYTHON_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(^|[;&|()]\s*)(sudo\s+)?(command\s+)?(\\)?(\S*/)?(?P<tool>python3|python|pip)(\s|$)",
+    )
+    .unwrap()
+});
+
+#[cfg(windows)]
+static LEGACY_PYTHON_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(^|[;&|()]\s*)(sudo\s+)?(command\s+)?(\\)?(\S*[\\/])?(?P<tool>python3|python|pip)(\s|$)",
+    )
+    .unwrap()
+});
+
+/// Python-related commands that should be replaced by uv.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegacyPythonTool {
+    Python,
+    Python3,
+    Pip,
+}
+
+impl LegacyPythonTool {
+    /// Returns the command name that was detected.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Python => "python",
+            Self::Python3 => "python3",
+            Self::Pip => "pip",
+        }
+    }
+}
+
+/// Detect direct use of `python`, `python3`, or `pip` in a shell command.
+///
+/// Commands already routed through uv, such as `uv run python` or `uv pip`,
+/// are not matched because the legacy tool is not the shell command being run.
+#[must_use]
+pub fn detect_legacy_python_command(cmd: &str) -> Option<LegacyPythonTool> {
+    LEGACY_PYTHON_PATTERN.captures(cmd).and_then(|caps| {
+        caps.name("tool")
+            .map(|m| match m.as_str().to_ascii_lowercase().as_str() {
+                "python" => LegacyPythonTool::Python,
+                "python3" => LegacyPythonTool::Python3,
+                "pip" => LegacyPythonTool::Pip,
+                _ => unreachable!(),
+            })
+    })
+}
+
+// ============================================================================
 // Rust #[allow(...)] / #[expect(...)] detection
 // ============================================================================
 

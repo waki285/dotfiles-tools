@@ -6,8 +6,8 @@
 
 use agent_hooks::{
     PackageManagerCheckResult, RustAllowCheckResult, check_dangerous_path_command,
-    check_destructive_find, check_package_manager, check_rust_allow_attributes, has_nul_redirect,
-    is_rm_command, is_rust_file,
+    check_destructive_find, check_package_manager, check_rust_allow_attributes,
+    detect_legacy_python_command, has_nul_redirect, is_rm_command, is_rust_file,
 };
 use napi_derive::napi;
 
@@ -35,6 +35,15 @@ pub fn check_destructive_find_js(cmd: String) -> Option<String> {
 #[must_use]
 pub fn has_nul_redirect_js(cmd: String) -> bool {
     has_nul_redirect(&cmd)
+}
+
+/// Detect direct use of `python`, `python3`, or `pip`.
+///
+/// Returns the command name if it should be replaced by uv, or `null` if safe.
+#[napi(js_name = "detectLegacyPythonCommand")]
+#[must_use]
+pub fn detect_legacy_python_command_js(cmd: String) -> Option<String> {
+    detect_legacy_python_command(&cmd).map(|tool| tool.name().to_string())
 }
 
 /// Check if a file path is a Rust file.

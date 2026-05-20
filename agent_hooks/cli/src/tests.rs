@@ -20,6 +20,17 @@ fn parse_cli_accepts_codex_rust_flags() {
 }
 
 #[test]
+fn parse_cli_accepts_prefer_uv_for_pre_tool_use() {
+    let result = parse_cli(
+        ["codex", "pre-tool-use", "--prefer-uv"]
+            .into_iter()
+            .map(String::from),
+    );
+
+    assert!(matches!(result, Ok(ParseCliResult::Run(_))));
+}
+
+#[test]
 fn parse_cli_rejects_claude_permission_request_rust_flags() {
     let result = parse_cli(
         ["claude", "permission-request", "--deny-rust-allow"]
@@ -233,6 +244,66 @@ fn codex_pre_tool_use_denies_package_manager_mismatch() {
 
     let _ = std::fs::remove_file(temp_dir.join("pnpm-lock.yaml"));
     let _ = std::fs::remove_dir(&temp_dir);
+}
+
+#[test]
+fn codex_pre_tool_use_prefers_uv_for_python() {
+    let parsed = ParsedCli {
+        provider: Provider::Codex,
+        event: Event::PreToolUse,
+        options: CliOptions {
+            bash_safety: BashSafetyOptions {
+                python_tools: PythonToolOptions { prefer_uv: true },
+                ..BashSafetyOptions::default()
+            },
+            ..CliOptions::default()
+        },
+    };
+
+    let output = run_hook(
+        &parsed,
+        r#"{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_use_id":"tool","tool_input":{"command":"python script.py"}}"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        output["hookSpecificOutput"]["permissionDecision"],
+        Value::String("deny".to_string())
+    );
+    assert!(
+        output["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap()
+            .contains("uv run python")
+    );
+}
+
+#[test]
+fn codex_pre_tool_use_prefers_uv_for_pip() {
+    let parsed = ParsedCli {
+        provider: Provider::Codex,
+        event: Event::PreToolUse,
+        options: CliOptions {
+            bash_safety: BashSafetyOptions {
+                python_tools: PythonToolOptions { prefer_uv: true },
+                ..BashSafetyOptions::default()
+            },
+            ..CliOptions::default()
+        },
+    };
+
+    let output = run_hook(
+        &parsed,
+        r#"{"session_id":"session","transcript_path":null,"cwd":"/repo","hook_event_name":"PreToolUse","model":"gpt-5.4","permission_mode":"default","turn_id":"turn","tool_name":"Bash","tool_use_id":"tool","tool_input":{"command":"pip install requests"}}"#,
+    )
+    .unwrap();
+
+    assert!(
+        output["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap()
+            .contains("uv pip")
+    );
 }
 
 #[test]

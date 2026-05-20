@@ -36,6 +36,7 @@ A Rust-based hook system providing safety checks for AI coding agents:
 - Protect dangerous paths from rm/trash/mv
 - Deny `#[allow(...)]` attributes in Rust files
 - Detect package manager mismatches
+- Prefer `uv` over direct `python`/`python3`/`pip` commands
 
 See [agent_hooks/README.md](agent_hooks/README.md) for details.
 

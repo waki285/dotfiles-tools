@@ -27,6 +27,7 @@ Flags:
   --check-package-manager
   --deny-destructive-find
   --deny-nul-redirect
+  --prefer-uv
 ";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +82,12 @@ struct BashSafetyOptions {
     check_package_manager: bool,
     deny_destructive_find: bool,
     deny_nul_redirect: bool,
+    python_tools: PythonToolOptions,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct PythonToolOptions {
+    prefer_uv: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -182,6 +189,7 @@ fn parse_cli(args: impl Iterator<Item = String>) -> Result<ParseCliResult, Strin
             "--check-package-manager" => options.bash_safety.check_package_manager = true,
             "--deny-destructive-find" => options.bash_safety.deny_destructive_find = true,
             "--deny-nul-redirect" => options.bash_safety.deny_nul_redirect = true,
+            "--prefer-uv" => options.bash_safety.python_tools.prefer_uv = true,
             other => return Err(format!("unknown flag: {other}")),
         }
         index += 1;
@@ -261,6 +269,7 @@ fn validate_option_support(
     );
     let supports_destructive_find = supports_pm_checks;
     let supports_nul_redirect = supports_pm_checks;
+    let supports_prefer_uv = supports_pm_checks;
 
     if options.bash_permissions.block_rm && !supports_block_rm {
         unsupported.push("--block-rm");
@@ -285,6 +294,9 @@ fn validate_option_support(
     }
     if options.bash_safety.deny_nul_redirect && !supports_nul_redirect {
         unsupported.push("--deny-nul-redirect");
+    }
+    if options.bash_safety.python_tools.prefer_uv && !supports_prefer_uv {
+        unsupported.push("--prefer-uv");
     }
 
     if unsupported.is_empty() {

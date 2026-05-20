@@ -151,6 +151,61 @@ fn test_has_nul_redirect_noop_on_non_windows() {
 }
 
 // -------------------------------------------------------------------------
+// detect_legacy_python_command tests
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_detect_legacy_python_command_python() {
+    assert_eq!(
+        detect_legacy_python_command("python script.py"),
+        Some(LegacyPythonTool::Python)
+    );
+}
+
+#[test]
+fn test_detect_legacy_python_command_python3() {
+    assert_eq!(
+        detect_legacy_python_command("python3 -m pytest"),
+        Some(LegacyPythonTool::Python3)
+    );
+}
+
+#[test]
+fn test_detect_legacy_python_command_pip() {
+    assert_eq!(
+        detect_legacy_python_command("pip install requests"),
+        Some(LegacyPythonTool::Pip)
+    );
+}
+
+#[test]
+fn test_detect_legacy_python_command_chained() {
+    assert_eq!(
+        detect_legacy_python_command("cd app && pip install requests"),
+        Some(LegacyPythonTool::Pip)
+    );
+}
+
+#[test]
+fn test_detect_legacy_python_command_allows_uv() {
+    assert_eq!(
+        detect_legacy_python_command("uv run python script.py"),
+        None
+    );
+    assert_eq!(
+        detect_legacy_python_command("uv pip install requests"),
+        None
+    );
+}
+
+#[test]
+fn test_detect_legacy_python_command_no_match() {
+    assert_eq!(detect_legacy_python_command("echo python"), None);
+    assert_eq!(detect_legacy_python_command("pipx install ruff"), None);
+    assert_eq!(detect_legacy_python_command("python3.12 script.py"), None);
+}
+
+// -------------------------------------------------------------------------
 // check_destructive_find tests (Unix only)
 // -------------------------------------------------------------------------
 

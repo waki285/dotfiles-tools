@@ -1,7 +1,8 @@
 use agent_hooks::{
-    PackageManagerCheckResult, RustAllowCheckResult, check_dangerous_path_command,
-    check_destructive_find, check_package_manager, check_rust_allow_attributes, has_nul_redirect,
-    is_rm_command, is_rust_file,
+    LegacyPythonTool, PackageManagerCheckResult, RustAllowCheckResult,
+    check_dangerous_path_command, check_destructive_find, check_package_manager,
+    check_rust_allow_attributes, detect_legacy_python_command, has_nul_redirect, is_rm_command,
+    is_rust_file,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -228,6 +229,7 @@ pub fn handle_claude_pre_tool_use(options: &CliOptions, input: &str) -> Option<S
         && !options.bash_safety.check_package_manager
         && !options.bash_safety.deny_destructive_find
         && !options.bash_safety.deny_nul_redirect
+        && !options.bash_safety.python_tools.prefer_uv
     {
         return None;
     }
@@ -276,6 +278,7 @@ pub fn handle_copilot_pre_tool_use(options: &CliOptions, input: &str) -> Option<
         && !options.bash_safety.check_package_manager
         && !options.bash_safety.deny_destructive_find
         && !options.bash_safety.deny_nul_redirect
+        && !options.bash_safety.python_tools.prefer_uv
     {
         return None;
     }
@@ -328,6 +331,7 @@ pub fn handle_codex_pre_tool_use(options: &CliOptions, input: &str) -> Option<St
         && !options.bash_safety.check_package_manager
         && !options.bash_safety.deny_destructive_find
         && !options.bash_safety.deny_nul_redirect
+        && !options.bash_safety.python_tools.prefer_uv
     {
         return None;
     }
@@ -444,6 +448,12 @@ fn evaluate_bash_denial(
         ));
     }
 
+    if options.bash_safety.python_tools.prefer_uv
+        && let Some(reason) = build_uv_redirection(cmd)
+    {
+        return Some(reason);
+    }
+
     if options.bash_safety.check_package_manager
         && let Some(reason) = build_package_manager_mismatch(cmd, cwd)
     {
@@ -451,6 +461,20 @@ fn evaluate_bash_denial(
     }
 
     None
+}
+
+fn build_uv_redirection(cmd: &str) -> Option<String> {
+    let tool = detect_legacy_python_command(cmd)?;
+    match tool {
+        LegacyPythonTool::Python | LegacyPythonTool::Python3 => Some(format!(
+            "{} is discouraged. Use uv instead: `uv run python ...`.",
+            tool.name()
+        )),
+        LegacyPythonTool::Pip => Some(
+            "pip is discouraged. Use uv instead: `uv pip ...`, or `uv add <package>` for project dependencies."
+                .to_string(),
+        ),
+    }
 }
 
 fn build_package_manager_mismatch(cmd: &str, cwd: Option<&str>) -> Option<String> {
